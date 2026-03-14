@@ -54,22 +54,22 @@ def fetch_trains():
             feed.ParseFromString(response.content)
             
             for entity in feed.entity:
-                if entity.HasField('trip_update'):
-                    route_id = entity.trip_update.trip.route_id
+                if not entity.HasField('trip_update'):
+                    continue
+                route_id = entity.trip_update.trip.route_id
+                
+                # We only care about A, C, and B trains
+                if route_id not in ['A', 'C', 'B']:
+                    continue
                     
-                    # We only care about A, C, and B trains
-                    if route_id not in ['A', 'C', 'B']:
+                for stop_time in entity.trip_update.stop_time_update:
+                    if stop_time.stop_id != STOP_ID:
                         continue
-                        
-                    for stop_time in entity.trip_update.stop_time_update:
-                        if stop_time.stop_id == STOP_ID:
-                            arrival_time = stop_time.arrival.time
-                            # Only add trains that haven't arrived yet
-                            if arrival_time > 0:
-                                arrivals.append({
-                                    'route': route_id,
-                                    'time': arrival_time
-                                })
+                    arrival_time = stop_time.arrival.time
+                    arrivals.append({
+                        'route': route_id,
+                        'time': arrival_time
+                    })
         except Exception as e:
             print(f"Feed error: {e}")
             
@@ -96,9 +96,9 @@ try:
             
             # Format text
             if minutes == 0:
-                text = f"{route} Train: Due"
+                text = f"{route} Arriving"
             else:
-                text = f"{route} Train: {minutes} min"
+                text = f"{route} {minutes} min"
                 
             color = colors.get(route, default_color)
             
