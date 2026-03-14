@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import sys
 import time
@@ -23,7 +25,7 @@ matrix = RGBMatrix(options=options)
 canvas = matrix.CreateFrameCanvas()
 
 # Load a smaller font to fit 3 lines of text
-font_path = "/home/robert/rpi-rgb-led-matrix/fonts/6x10.bdf"
+font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
 if not os.path.exists(font_path):
     print(f"Error: Font not found at {font_path}")
     sys.exit(1)
@@ -39,6 +41,21 @@ colors = {
     'B': graphics.Color(255, 100, 0),    # Orange
 }
 default_color = graphics.Color(200, 200, 200)
+
+
+def draw_route_bullet(canvas, font, x, y, route, bg_color):
+    # 'y' is the text baseline. For an 8px font, center is ~3 pixels up.
+    center_x = x + 4
+    center_y = y - 3 
+    
+    # Draw a smaller filled circle (radius 4)
+    for r in range(4, -1, -1):
+        graphics.DrawCircle(canvas, center_x, center_y, r, bg_color)
+        
+    # Draw the white letter (tweaked offsets to center in the smaller bullet)
+    white = graphics.Color(255, 255, 255)
+    graphics.DrawText(canvas, font, x + 2, y, white, route)
+
 
 def fetch_trains():
     arrivals = []
@@ -83,32 +100,32 @@ try:
     while True:
         trains = fetch_trains()
         canvas.Clear()
-        
-        y_pos = 10
+
+        # Start the first line's baseline at exactly pixel 8
+        y_pos = 8
         now = int(time.time())
-        
-        # Display the next 3 trains
+
+        # Display the next 3 trains (leaving room for line 4)
         for train in trains[:3]:
             route = train['route']
-            
-            # Calculate minutes away
             minutes = max(0, int((train['time'] - now) / 60))
-            
-            # Format text
+
+            bg_color = colors.get(route, default_color)
+            draw_route_bullet(canvas, font, 2, y_pos, route, bg_color)
+
             if minutes == 0:
-                text = f"{route} Arriving"
+                text = "Arriving"
             else:
-                text = f"{route} {minutes} min"
-                
-            color = colors.get(route, default_color)
-            
-            # Draw to the hidden canvas
-            graphics.DrawText(canvas, font, 2, y_pos, color, text)
-            
-            # Move down 10 pixels for the next line
-            y_pos += 10
-            
-        # Push the hidden canvas to the actual LED matrix
+                text = f"{minutes} min"
+
+            text_color = graphics.Color(200, 200, 200)
+            graphics.DrawText(canvas, font, 14, y_pos, text_color, text)
+
+            # Move down exactly 8 pixels for the next row
+            y_pos += 8
+
+        # [Line 4 will go here later, y_pos is now 32]
+
         canvas = matrix.SwapOnVSync(canvas)
         
         # Wait 30 seconds before polling the API again
