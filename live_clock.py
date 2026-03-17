@@ -24,7 +24,7 @@ options.drop_privileges = False # Required for Bookworm permissions
 matrix = RGBMatrix(options=options)
 canvas = matrix.CreateFrameCanvas()
 
-# Load a smaller font to fit 3 lines of text
+# Load a smaller font to fit 4 lines of text (8px per line)
 font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
 if not os.path.exists(font_path):
     print(f"Error: Font not found at {font_path}")
@@ -34,7 +34,6 @@ font = graphics.Font()
 font.LoadFont(font_path)
 
 # --- MTA Colors ---
-# Tweaked slightly so they glow brightly on an LED matrix
 colors = {
     'A': graphics.Color(50, 100, 255),   # Blue
     'C': graphics.Color(50, 100, 255),   # Blue
@@ -42,43 +41,64 @@ colors = {
 }
 default_color = graphics.Color(200, 200, 200)
 
-
 def draw_route_bullet(canvas, font, x, y, route, bg_color):
-    # 'y' is the text baseline. For an 8px font, center is ~3 pixels up.
-    center_x = x + 4
-    center_y = y - 3 
-    
-    # Draw a smaller filled circle (radius 4)
-    for r in range(4, -1, -1):
-        graphics.DrawCircle(canvas, center_x, center_y, r, bg_color)
-        
-    # Draw the white letter (tweaked offsets to center in the smaller bullet)
-    white = graphics.Color(255, 255, 255)
-    graphics.DrawText(canvas, font, x + 2, y, white, route)
+    # Center the 7px circle (radius 3) in the 8px row bounds
+    center_x = x + 3
+    center_y = y - 4
 
+    # Draw a smaller filled circle
+    for r in range(3, -1, -1):
+        graphics.DrawCircle(canvas, center_x, center_y, r, bg_color)
+
+    # Draw the white letter (tweaked offset to center in the 7px bullet)
+    white = graphics.Color(255, 255, 255)
+    graphics.DrawText(canvas, font, x + 1, y, white, route)
+
+def fetch_weather():
+    try:
+        # Pings Open-Meteo for local Beacon, NY forecast
+        url = "https://api.open-meteo.com/v1/forecast?latitude=41.50&longitude=-73.97&current_weather=true&temperature_unit=fahrenheit"
+        response = requests.get(url, timeout=5)
+        data = response.json()['current_weather']
+
+        temp = int(data['temperature'])
+        code = data['weathercode']
+
+        # Map WMO weather codes to simple text that fits on the screen
+        if code == 0: cond = "Clear"
+        elif code in [1, 2, 3]: cond = "Cloudy"
+        elif code in [45, 48]: cond = "Fog"
+        elif code in [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82]: cond = "Rain"
+        elif code in [71, 73, 75, 77, 85, 86]: cond = "Snow"
+        elif code in [95, 96, 99]: cond = "Storm"
+        else: cond = ""
+
+        return f"{temp}° {cond}"
+    except Exception as e:
+        print(f"Weather fetch error: {e}")
+        return "Weather N/A"
 
 def fetch_trains():
     arrivals = []
-    
+
     for url in FEED_URLS:
         try:
-            # Look ma, no API keys!
             response = requests.get(url, timeout=10)
             if response.status_code != 200:
                 continue
-                
+
             feed = gtfs_realtime_pb2.FeedMessage()
             feed.ParseFromString(response.content)
-            
+
             for entity in feed.entity:
                 if not entity.HasField('trip_update'):
                     continue
                 route_id = entity.trip_update.trip.route_id
-                
+
                 # We only care about A, C, and B trains
                 if route_id not in ['A', 'C', 'B']:
                     continue
-                    
+
                 for stop_time in entity.trip_update.stop_time_update:
                     if stop_time.stop_id != STOP_ID:
                         continue
@@ -89,7 +109,7 @@ def fetch_trains():
                     })
         except Exception as e:
             print(f"Feed error: {e}")
-            
+
     # Sort by arrival time (soonest first)
     arrivals.sort(key=lambda x: x['time'])
     return arrivals
@@ -98,14 +118,17 @@ print("Starting Subway Clock... Press Ctrl+C to exit.")
 
 try:
     while True:
+        # Fetch data
         trains = fetch_trains()
+        weather_text = fetch_weather()
+
         canvas.Clear()
 
         # Start the first line's baseline at exactly pixel 8
         y_pos = 8
         now = int(time.time())
 
-        # Display the next 3 trains (leaving room for line 4)
+        # 1. Display the next 3 trains
         for train in trains[:3]:
             route = train['route']
             minutes = max(0, int((train['time'] - now) / 60))
@@ -124,12 +147,15 @@ try:
             # Move down exactly 8 pixels for the next row
             y_pos += 8
 
-        # [Line 4 will go here later, y_pos is now 32]
+        # 2. Display the weather on Line 4 (y_pos is now exactly 32)
+        # Using a bright yellow/gold to separate it visually from the transit times
+        weather_color = graphics.Color(255, 215, 0)
+        graphics.DrawText(canvas, font, 2, y_pos, weather_color, weather_text)
 
         canvas = matrix.SwapOnVSync(canvas)
-        
-        # Wait 30 seconds before polling the API again
+
+        # Wait 30 seconds before polling the APIs again
         time.sleep(30)
-        
+
 except KeyboardInterrupt:
     sys.exit(0)
