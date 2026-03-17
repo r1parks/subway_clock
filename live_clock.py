@@ -20,7 +20,7 @@ options = RGBMatrixOptions()
 options.rows = 32
 options.cols = 64
 options.hardware_mapping = 'adafruit-hat'
-options.drop_privileges = False # Required for Bookworm permissions
+options.drop_privileges = False  # Required for Bookworm permissions
 matrix = RGBMatrix(options=options)
 canvas = matrix.CreateFrameCanvas()
 
@@ -33,6 +33,9 @@ if not os.path.exists(font_path):
 font = graphics.Font()
 font.LoadFont(font_path)
 
+graphics.DrawText(canvas, font, 4, 16, graphics.Color(200, 200, 200), 'starting...')
+canvas = matrix.SwapOnVSync(canvas)
+
 # --- MTA Colors ---
 colors = {
     'A': graphics.Color(50, 100, 255),   # Blue
@@ -40,6 +43,11 @@ colors = {
     'B': graphics.Color(255, 100, 0),    # Orange
 }
 default_color = graphics.Color(200, 200, 200)
+
+
+class NoWeatherException(Exception):
+    ...
+
 
 def draw_route_bullet(canvas, font, x, y, route, bg_color):
     # Center the 7px circle (radius 3) in the 8px row bounds
@@ -54,11 +62,23 @@ def draw_route_bullet(canvas, font, x, y, route, bg_color):
     white = graphics.Color(255, 255, 255)
     graphics.DrawText(canvas, font, x + 1, y, white, route)
 
+
 def fetch_weather():
+    # Define the base endpoint
+    weather_endpoint = "https://api.open-meteo.com/v1/forecast"
+
+    # Build the dictionary of parameters
+    weather_query_params = {
+        "latitude": 41.50,
+        "longitude": -73.97,
+        "current_weather": "true",
+        "temperature_unit": "fahrenheit"
+    }
+
+    # Pass the dictionary to the 'params' argument
     try:
         # Pings Open-Meteo for local Beacon, NY forecast
-        url = "https://api.open-meteo.com/v1/forecast?latitude=41.50&longitude=-73.97&current_weather=true&temperature_unit=fahrenheit"
-        response = requests.get(url, timeout=5)
+        response = requests.get(weather_endpoint, params=weather_query_params, timeout=5)
         data = response.json()['current_weather']
 
         temp = int(data['temperature'])
@@ -76,7 +96,8 @@ def fetch_weather():
         return f"{temp}° {cond}"
     except Exception as e:
         print(f"Weather fetch error: {e}")
-        return "Weather N/A"
+        raise NoWeatherException(e.message)
+
 
 def fetch_trains():
     arrivals = []
@@ -114,13 +135,21 @@ def fetch_trains():
     arrivals.sort(key=lambda x: x['time'])
     return arrivals
 
+
 print("Starting Subway Clock... Press Ctrl+C to exit.")
 
+
+graphics.DrawText(canvas, font, 14, 16, graphics.Color(200, 200, 200), 'starting...')
+weather_text = "weather..."
 try:
     while True:
         # Fetch data
         trains = fetch_trains()
-        weather_text = fetch_weather()
+        try:
+            weather_text = fetch_weather()
+        except:
+            pass
+
 
         canvas.Clear()
 
@@ -156,6 +185,6 @@ try:
 
         # Wait 30 seconds before polling the APIs again
         time.sleep(30)
-
 except KeyboardInterrupt:
+    print("Bye")
     sys.exit(0)
