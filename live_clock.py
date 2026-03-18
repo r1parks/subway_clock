@@ -33,13 +33,26 @@ if not os.path.exists(font_path):
 font = graphics.Font()
 font.LoadFont(font_path)
 
-graphics.DrawText(canvas, font, 4, 16, graphics.Color(200, 200, 200), 'starting...')
+time_font_path = "/home/robert/rpi-rgb-led-matrix/fonts/4x6.bdf"
+if not os.path.exists(time_font_path):
+    print(f"Error: Font not found at {time_font_path}")
+    sys.exit(1)
+
+time_font = graphics.Font()
+time_font.LoadFont(time_font_path)
+
+graphics.DrawText(canvas,
+                  font,
+                  4,
+                  16,
+                  graphics.Color(200, 200, 200),
+                  'starting...')
 canvas = matrix.SwapOnVSync(canvas)
 
 # --- MTA Colors ---
 colors = {
-    'A': graphics.Color(50, 100, 255),   # Blue
-    'C': graphics.Color(50, 100, 255),   # Blue
+    'A': graphics.Color(0, 0, 255),   # Blue
+    'C': graphics.Color(0, 0, 255),   # Blue
     'B': graphics.Color(255, 100, 0),    # Orange
 }
 default_color = graphics.Color(200, 200, 200)
@@ -49,16 +62,33 @@ class NoWeatherException(Exception):
     ...
 
 
+def draw_time(canvas):
+    time_color = graphics.Color(255, 215, 0)
+    hh_mm_time = time.strftime("%-I:%M")
+    x_pos = 45
+    y_pos = 5
+    graphics.DrawText(canvas, time_font, x_pos, y_pos, time_color, hh_mm_time)
+
+
 def draw_route_bullet(canvas, font, x, y, route, bg_color):
-    # Center the 7px circle (radius 3) in the 8px row bounds
     center_x = x + 3
-    center_y = y - 4
+    center_y = y - 3
 
-    # Draw a smaller filled circle
-    for r in range(3, -1, -1):
-        graphics.DrawCircle(canvas, center_x, center_y, r, bg_color)
+    # Hardcode the pixel widths for each row to create a perfect 7x7 circle.
+    # A width of '1' draws 3 pixels (center - 1 to center + 1).
+    # A width of '3' draws 7 pixels (center - 3 to center + 3).
+    row_widths = [1, 2, 3, 3, 3, 2, 1]
 
-    # Draw the white letter (tweaked offset to center in the 7px bullet)
+    for i, width in enumerate(row_widths):
+        y_offset = i - 3  # Maps the 0-6 index to the -3 to +3 vertical offset
+        graphics.DrawLine(canvas,
+                          center_x - width,
+                          center_y + y_offset,
+                          center_x + width,
+                          center_y + y_offset,
+                          bg_color)
+
+    # Draw the white letter
     white = graphics.Color(255, 255, 255)
     graphics.DrawText(canvas, font, x + 1, y, white, route)
 
@@ -139,7 +169,6 @@ def fetch_trains():
 print("Starting Subway Clock... Press Ctrl+C to exit.")
 
 
-graphics.DrawText(canvas, font, 14, 16, graphics.Color(200, 200, 200), 'starting...')
 weather_text = "weather..."
 try:
     while True:
@@ -154,7 +183,7 @@ try:
         canvas.Clear()
 
         # Start the first line's baseline at exactly pixel 8
-        y_pos = 8
+        y_pos = 7
         now = int(time.time())
 
         # 1. Display the next 3 trains
@@ -166,12 +195,12 @@ try:
             draw_route_bullet(canvas, font, 2, y_pos, route, bg_color)
 
             if minutes == 0:
-                text = "Arriving"
+                text = "Now"
             else:
                 text = f"{minutes} min"
 
             text_color = graphics.Color(200, 200, 200)
-            graphics.DrawText(canvas, font, 14, y_pos, text_color, text)
+            graphics.DrawText(canvas, font, 13, y_pos, text_color, text)
 
             # Move down exactly 8 pixels for the next row
             y_pos += 8
@@ -181,6 +210,7 @@ try:
         weather_color = graphics.Color(255, 215, 0)
         graphics.DrawText(canvas, font, 2, y_pos, weather_color, weather_text)
 
+        draw_time(canvas)
         canvas = matrix.SwapOnVSync(canvas)
 
         # Wait 30 seconds before polling the APIs again
