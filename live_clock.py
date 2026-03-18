@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import requests
+import signal
 from google.transit import gtfs_realtime_pb2
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
@@ -24,6 +25,15 @@ options.drop_privileges = False  # Required for Bookworm permissions
 matrix = RGBMatrix(options=options)
 canvas = matrix.CreateFrameCanvas()
 
+def clear_matrix_and_exit(signum, frame):
+    print("Stopping service and clearing matrix...")
+    matrix.Clear()  # This physically turns off all LEDs
+    sys.exit(0)
+
+# Listen for systemd stop (SIGTERM) and Ctrl+C (SIGINT)
+signal.signal(signal.SIGTERM, clear_matrix_and_exit)
+signal.signal(signal.SIGINT, clear_matrix_and_exit)
+
 # Load a smaller font to fit 4 lines of text (8px per line)
 font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
 if not os.path.exists(font_path):
@@ -32,6 +42,14 @@ if not os.path.exists(font_path):
 
 font = graphics.Font()
 font.LoadFont(font_path)
+
+train_font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
+if not os.path.exists(train_font_path):
+    print(f"Error: Font not found at {font_path}")
+    sys.exit(1)
+
+train_font = graphics.Font()
+train_font.LoadFont(train_font_path)
 
 time_font_path = "/home/robert/rpi-rgb-led-matrix/fonts/4x6.bdf"
 if not os.path.exists(time_font_path):
@@ -62,12 +80,15 @@ class NoWeatherException(Exception):
     ...
 
 
+def time_text():
+    return time.strftime("%-I:%M").rjust(5)
+
+
 def draw_time(canvas):
     time_color = graphics.Color(255, 215, 0)
-    hh_mm_time = time.strftime("%-I:%M")
     x_pos = 45
     y_pos = 5
-    graphics.DrawText(canvas, time_font, x_pos, y_pos, time_color, hh_mm_time)
+    graphics.DrawText(canvas, time_font, x_pos, y_pos, time_color, time_text())
 
 
 def draw_route_bullet(canvas, font, x, y, route, bg_color):
@@ -77,20 +98,20 @@ def draw_route_bullet(canvas, font, x, y, route, bg_color):
     # Hardcode the pixel widths for each row to create a perfect 7x7 circle.
     # A width of '1' draws 3 pixels (center - 1 to center + 1).
     # A width of '3' draws 7 pixels (center - 3 to center + 3).
-    row_widths = [1, 2, 3, 3, 3, 2, 1]
+    row_widths = [1, 2, 2, 3, 3, 3, 2, 1]
 
     for i, width in enumerate(row_widths):
-        y_offset = i - 3  # Maps the 0-6 index to the -3 to +3 vertical offset
+        y_offset = i - 4  # Maps the 0-6 index to the -3 to +3 vertical offset
         graphics.DrawLine(canvas,
                           center_x - width,
                           center_y + y_offset,
-                          center_x + width,
+                          center_x + width + 1,
                           center_y + y_offset,
                           bg_color)
 
     # Draw the white letter
     white = graphics.Color(255, 255, 255)
-    graphics.DrawText(canvas, font, x + 1, y, white, route)
+    graphics.DrawText(canvas, train_font, x + 2, y, white, route)
 
 
 def fetch_weather():
@@ -154,10 +175,11 @@ def fetch_trains():
                     if stop_time.stop_id != STOP_ID:
                         continue
                     arrival_time = stop_time.arrival.time
-                    arrivals.append({
-                        'route': route_id,
-                        'time': arrival_time
-                    })
+                    if int(time.time()) - arrival_time > 60:
+                        arrivals.append({
+                            'route': route_id,
+                            'time': arrival_time
+                        })
         except Exception as e:
             print(f"Feed error: {e}")
 
@@ -170,51 +192,47 @@ print("Starting Subway Clock... Press Ctrl+C to exit.")
 
 
 weather_text = "weather..."
-try:
-    while True:
-        # Fetch data
-        trains = fetch_trains()
-        try:
-            weather_text = fetch_weather()
-        except:
-            pass
+while True:
+    # Fetch data
+    trains = fetch_trains()
+    try:
+        weather_text = fetch_weather()
+    except:
+        pass
 
 
-        canvas.Clear()
+    canvas.Clear()
 
-        # Start the first line's baseline at exactly pixel 8
-        y_pos = 7
-        now = int(time.time())
+    # Start the first line's baseline at exactly pixel 8
+    y_pos = 7
+    now = int(time.time())
 
-        # 1. Display the next 3 trains
-        for train in trains[:3]:
-            route = train['route']
-            minutes = max(0, int((train['time'] - now) / 60))
+    # 1. Display the next 3 trains
+    for train in trains[:3]:
+        route = train['route']
+        minutes = max(0, int((train['time'] - now) / 60))
 
-            bg_color = colors.get(route, default_color)
-            draw_route_bullet(canvas, font, 2, y_pos, route, bg_color)
+        bg_color = colors.get(route, default_color)
+        draw_route_bullet(canvas, font, 0, y_pos, route, bg_color)
 
-            if minutes == 0:
-                text = "Now"
-            else:
-                text = f"{minutes} min"
+        if minutes == 0:
+            text = "Now"
+        else:
+            text = f"{minutes} min"
 
-            text_color = graphics.Color(200, 200, 200)
-            graphics.DrawText(canvas, font, 13, y_pos, text_color, text)
+        text_color = graphics.Color(200, 200, 200)
+        graphics.DrawText(canvas, font, 11, y_pos, text_color, text)
 
-            # Move down exactly 8 pixels for the next row
-            y_pos += 8
+        # Move down exactly 8 pixels for the next row
+        y_pos += 8
 
-        # 2. Display the weather on Line 4 (y_pos is now exactly 32)
-        # Using a bright yellow/gold to separate it visually from the transit times
-        weather_color = graphics.Color(255, 215, 0)
-        graphics.DrawText(canvas, font, 2, y_pos, weather_color, weather_text)
+    # 2. Display the weather on Line 4 (y_pos is now exactly 32)
+    # Using a bright yellow/gold to separate it visually from the transit times
+    weather_color = graphics.Color(255, 215, 0)
+    graphics.DrawText(canvas, time_font, 2, y_pos, weather_color, weather_text)
 
-        draw_time(canvas)
-        canvas = matrix.SwapOnVSync(canvas)
+    draw_time(canvas)
+    canvas = matrix.SwapOnVSync(canvas)
 
-        # Wait 30 seconds before polling the APIs again
-        time.sleep(30)
-except KeyboardInterrupt:
-    print("Bye")
-    sys.exit(0)
+    # Wait 30 seconds before polling the APIs again
+    time.sleep(30)
