@@ -198,6 +198,7 @@ print("Starting Subway Clock... Press Ctrl+C to exit.")
 
 
 weather_text = "weather..."
+current_brightness = None
 while True:
     # Fetch data
     trains = fetch_trains()
@@ -210,9 +211,12 @@ while True:
 
     # Check if the current hour is late at night OR early morning
     if current_hour >= NIGHT_START_HOUR or current_hour < NIGHT_END_HOUR:
-        matrix.brightness = NIGHT_BRIGHTNESS
+        target_brightness = NIGHT_BRIGHTNESS
     else:
-        matrix.brightness = DAY_BRIGHTNESS
+        target_brightness = DAY_BRIGHTNESS
+
+    if current_brightness != target_brightness:
+        matrix.brightness = current_brightness = target_brightness
 
     canvas.Clear()
 
