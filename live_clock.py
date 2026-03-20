@@ -16,6 +16,12 @@ FEED_URLS = [
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm"
 ]
 
+# Dimming settings (0-100)
+DAY_BRIGHTNESS = 100
+NIGHT_BRIGHTNESS = 20
+NIGHT_START_HOUR = 20
+NIGHT_END_HOUR = 8
+
 # --- Matrix Setup ---
 options = RGBMatrixOptions()
 options.rows = 32
@@ -98,7 +104,7 @@ def draw_route_bullet(canvas, font, x, y, route, bg_color):
     # Hardcode the pixel widths for each row to create a perfect 7x7 circle.
     # A width of '1' draws 3 pixels (center - 1 to center + 1).
     # A width of '3' draws 7 pixels (center - 3 to center + 3).
-    row_widths = [1, 2, 2, 3, 3, 3, 2, 1]
+    row_widths = [1, 2, 3, 3, 3, 3, 2, 1]
 
     for i, width in enumerate(row_widths):
         y_offset = i - 4  # Maps the 0-6 index to the -3 to +3 vertical offset
@@ -175,7 +181,7 @@ def fetch_trains():
                     if stop_time.stop_id != STOP_ID:
                         continue
                     arrival_time = stop_time.arrival.time
-                    if int(time.time()) - arrival_time > 60:
+                    if arrival_time - int(time.time()) > 60:
                         arrivals.append({
                             'route': route_id,
                             'time': arrival_time
@@ -200,6 +206,13 @@ while True:
     except:
         pass
 
+    current_hour = time.localtime().tm_hour
+
+    # Check if the current hour is late at night OR early morning
+    if current_hour >= NIGHT_START_HOUR or current_hour < NIGHT_END_HOUR:
+        matrix.brightness = NIGHT_BRIGHTNESS
+    else:
+        matrix.brightness = DAY_BRIGHTNESS
 
     canvas.Clear()
 
