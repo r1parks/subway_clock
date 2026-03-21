@@ -5,6 +5,7 @@ import sys
 import time
 import requests
 import signal
+import subprocess
 from google.transit import gtfs_realtime_pb2
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
@@ -31,10 +32,12 @@ options.drop_privileges = False  # Required for Bookworm permissions
 matrix = RGBMatrix(options=options)
 canvas = matrix.CreateFrameCanvas()
 
+
 def clear_matrix_and_exit(signum, frame):
     print("Stopping service and clearing matrix...")
     matrix.Clear()  # This physically turns off all LEDs
     sys.exit(0)
+
 
 # Listen for systemd stop (SIGTERM) and Ctrl+C (SIGINT)
 signal.signal(signal.SIGTERM, clear_matrix_and_exit)
@@ -69,7 +72,7 @@ graphics.DrawText(canvas,
                   font,
                   4,
                   16,
-                  graphics.Color(200, 200, 200),
+                  graphics.Color(200, 200, 0),
                   'starting...')
 canvas = matrix.SwapOnVSync(canvas)
 
@@ -135,60 +138,65 @@ def fetch_weather():
     # Pass the dictionary to the 'params' argument
     try:
         # Pings Open-Meteo for local Beacon, NY forecast
-        response = requests.get(weather_endpoint, params=weather_query_params, timeout=5)
+        response = requests.get(weather_endpoint,
+                                params=weather_query_params,
+                                timeout=5)
         data = response.json()['current_weather']
 
         temp = int(data['temperature'])
         code = data['weathercode']
 
         # Map WMO weather codes to simple text that fits on the screen
-        if code == 0: cond = "Clear"
-        elif code in [1, 2, 3]: cond = "Cloudy"
-        elif code in [45, 48]: cond = "Fog"
-        elif code in [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82]: cond = "Rain"
-        elif code in [71, 73, 75, 77, 85, 86]: cond = "Snow"
-        elif code in [95, 96, 99]: cond = "Storm"
-        else: cond = ""
+        if code == 0:
+            cond = "Clear"
+        elif code in [1, 2, 3]:
+            cond = "Cloudy"
+        elif code in [45, 48]:
+            cond = "Fog"
+        elif code in [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82]:
+            cond = "Rain"
+        elif code in [71, 73, 75, 77, 85, 86]:
+            cond = "Snow"
+        elif code in [95, 96, 99]:
+            cond = "Storm"
+        else:
+            cond = ""
 
         return f"{temp}° {cond}"
     except Exception as e:
         print(f"Weather fetch error: {e}")
-        raise NoWeatherException(e.message)
+        raise NoWeatherException from e
 
 
 def fetch_trains():
     arrivals = []
 
     for url in FEED_URLS:
-        try:
-            response = requests.get(url, timeout=10)
-            if response.status_code != 200:
+        response = requests.get(url, timeout=10)
+        if response.status_code != 200:
+            continue
+
+        feed = gtfs_realtime_pb2.FeedMessage()
+        feed.ParseFromString(response.content)
+
+        for entity in feed.entity:
+            if not entity.HasField('trip_update'):
+                continue
+            route_id = entity.trip_update.trip.route_id
+
+            # We only care about A, C, and B trains
+            if route_id not in ['A', 'C', 'B']:
                 continue
 
-            feed = gtfs_realtime_pb2.FeedMessage()
-            feed.ParseFromString(response.content)
-
-            for entity in feed.entity:
-                if not entity.HasField('trip_update'):
+            for stop_time in entity.trip_update.stop_time_update:
+                if stop_time.stop_id != STOP_ID:
                     continue
-                route_id = entity.trip_update.trip.route_id
-
-                # We only care about A, C, and B trains
-                if route_id not in ['A', 'C', 'B']:
-                    continue
-
-                for stop_time in entity.trip_update.stop_time_update:
-                    if stop_time.stop_id != STOP_ID:
-                        continue
-                    arrival_time = stop_time.arrival.time
-                    if arrival_time - int(time.time()) > 60:
-                        arrivals.append({
-                            'route': route_id,
-                            'time': arrival_time
-                        })
-        except Exception as e:
-            print(f"Feed error: {e}")
-
+                arrival_time = stop_time.arrival.time
+                if arrival_time - int(time.time()) > 60:
+                    arrivals.append({
+                        'route': route_id,
+                        'time': arrival_time
+                    })
     # Sort by arrival time (soonest first)
     arrivals.sort(key=lambda x: x['time'])
     return arrivals
@@ -197,16 +205,7 @@ def fetch_trains():
 print("Starting Subway Clock... Press Ctrl+C to exit.")
 
 
-weather_text = "weather..."
-current_brightness = None
-while True:
-    # Fetch data
-    trains = fetch_trains()
-    try:
-        weather_text = fetch_weather()
-    except:
-        pass
-
+def update_brightness(matrix, current_brightness):
     current_hour = time.localtime().tm_hour
 
     # Check if the current hour is late at night OR early morning
@@ -218,6 +217,58 @@ while True:
     if current_brightness != target_brightness:
         matrix.brightness = current_brightness = target_brightness
 
+    return current_brightness
+
+
+def captive_portal_running():
+    """Returns True if the wifi-connect service is actively running."""
+    try:
+        # Ask systemd if the service is active
+        result = subprocess.run(
+            ['systemctl', 'is-active', 'wifi-connect.service'],
+            stdout=subprocess.PIPE,
+            text=True
+        )
+        # If it's running, systemd returns the word 'active'
+        return result.stdout.strip() == 'active'
+    except Exception as e:
+        print(str(e))
+        return False
+
+
+def display_wifi_info(matrix, canvas):
+    canvas.Clear()
+    graphics.DrawText(canvas,
+                      time_font,
+                      4,
+                      16,
+                      graphics.Color(200, 200, 0),
+                      'WIFI!')
+    return matrix.SwapOnVSync(canvas)
+
+
+weather_text = ''
+current_brightness = None
+while True:
+    try:
+        trains = []
+        trains = fetch_trains()
+    except Exception as e:
+        print(str(e))
+    try:
+        new_weather_text = ''
+        new_weather_text = fetch_weather()
+        weather_text = new_weather_text
+    except Exception as e:
+        print(str(e))
+
+    if not trains and not new_weather_text:
+        if captive_portal_running():
+            canvas = display_wifi_info(matrix, canvas)
+        time.sleep(10)
+        continue
+
+    current_brightness = update_brightness(matrix, current_brightness)
     canvas.Clear()
 
     # Start the first line's baseline at exactly pixel 8
@@ -246,7 +297,7 @@ while True:
     # 2. Display the weather on Line 4 (y_pos is now exactly 32)
     # Using a bright yellow/gold to separate it visually from the transit times
     weather_color = graphics.Color(255, 215, 0)
-    graphics.DrawText(canvas, time_font, 2, y_pos, weather_color, weather_text)
+    graphics.DrawText(canvas, time_font, 2, 31, weather_color, weather_text)
 
     draw_time(canvas)
     canvas = matrix.SwapOnVSync(canvas)
