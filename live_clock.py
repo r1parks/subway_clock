@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import sys
 import time
 import requests
@@ -19,7 +20,7 @@ FEED_URLS = [
 
 # Dimming settings (0-100)
 DAY_BRIGHTNESS = 100
-NIGHT_BRIGHTNESS = 20
+NIGHT_BRIGHTNESS = 2
 NIGHT_START_HOUR = 20
 NIGHT_END_HOUR = 8
 
@@ -83,6 +84,34 @@ colors = {
     'B': graphics.Color(255, 100, 0),    # Orange
 }
 default_color = graphics.Color(200, 200, 200)
+
+
+def get_portal_ssid():
+    """Extracts the exact SSID from the systemd service file."""
+    try:
+        with open('/etc/systemd/system/wifi-connect.service', 'r') as f:
+            content = f.read()
+        # Look for --portal-ssid "WhateverName"
+        match = re.search(r'--portal-ssid\s+"([^"]+)"', content)
+        if match:
+            return match.group(1)
+    except Exception as e:
+        print(f"Error reading SSID: {e}")
+
+    return "setup-wifi?"  # Fallback just in case
+
+def get_portal_ip():
+    """Gets the live IP address of the Pi's Access Point."""
+    try:
+        # 'hostname -I' returns a space-separated list of active IPs
+        result = subprocess.run(['hostname', '-I'], stdout=subprocess.PIPE, text=True)
+        ips = result.stdout.strip().split()
+        if ips:
+            return ips[0]
+    except Exception as e:
+        print(f"Error reading IP: {e}")
+
+    return "192.168.42.1"  # Balena's standard default fallback
 
 
 class NoWeatherException(Exception):
@@ -238,12 +267,17 @@ def captive_portal_running():
 
 def display_wifi_info(matrix, canvas):
     canvas.Clear()
-    graphics.DrawText(canvas,
-                      time_font,
-                      4,
-                      16,
-                      graphics.Color(200, 200, 0),
-                      'WIFI!')
+    amber = graphics.Color(200, 150, 0)
+    text_lines = ['SSID:', f' {get_portal_ssid()}', '', get_portal_ip()]
+    y_pos = 7
+    for line in text_lines:
+        graphics.DrawText(canvas,
+                          time_font,
+                          0,
+                          y_pos,
+                          amber,
+                          line)
+        y_pos += 8
     return matrix.SwapOnVSync(canvas)
 
 
