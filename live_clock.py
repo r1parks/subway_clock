@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+import json
 import os
-import re
 import sys
 import time
 import requests
@@ -15,14 +15,9 @@ STOP_ID = "A19S"                   # 96th St Station (Downtown / Southbound)
 
 FEED_URLS = [
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm"
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm",
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw"
 ]
-
-# Dimming settings (0-100)
-DAY_BRIGHTNESS = 100
-NIGHT_BRIGHTNESS = 2
-NIGHT_START_HOUR = 20
-NIGHT_END_HOUR = 8
 
 # --- Matrix Setup ---
 options = RGBMatrixOptions()
@@ -32,6 +27,33 @@ options.hardware_mapping = 'adafruit-hat'
 options.drop_privileges = False  # Required for Bookworm permissions
 matrix = RGBMatrix(options=options)
 canvas = matrix.CreateFrameCanvas()
+
+CONFIG_FILE = '/etc/subway-clock.json'
+
+
+def load_config():
+    """Reads the SSOT config, supplying safe defaults if missing."""
+    default_config = {
+        "portal_ssid": "SubwayClock",
+        "stop_ids": ["A19S"],
+        "routes": ["A", "C", "B"],
+        "day_brightness": 100,
+        "night_brightness": 2,
+        "night_start_hour": 20,
+        "night_end_hour": 8,
+        "weather_lat": 41.50,
+        "weather_lon": -73.97
+    }
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                user_config = json.load(f)
+                # Overwrites defaults with whatever is actually in the file
+                default_config.update(user_config)
+    except Exception as e:
+        print(f"Error reading JSON config: {e}")
+
+    return default_config
 
 
 def clear_matrix_and_exit(signum, frame):
@@ -77,41 +99,81 @@ graphics.DrawText(canvas,
                   'starting...')
 canvas = matrix.SwapOnVSync(canvas)
 
-# --- MTA Colors ---
+# --- Base Colors (Tuned for LED Matrices) ---
+mta_blue        = graphics.Color(0, 50, 255)
+mta_orange      = graphics.Color(255, 100, 0)
+mta_light_green = graphics.Color(100, 255, 50)
+mta_brown       = graphics.Color(150, 100, 50)
+mta_light_gray  = graphics.Color(100, 100, 100)
+mta_yellow      = graphics.Color(200, 150, 0)
+mta_red         = graphics.Color(255, 0, 0)
+mta_dark_green  = graphics.Color(0, 200, 50)
+mta_purple      = graphics.Color(200, 0, 200)
+mta_dark_gray   = graphics.Color(75, 75, 75)
+mta_default     = graphics.Color(50, 50, 50)
+
+# --- MTA Route Map ---
 colors = {
-    'A': graphics.Color(0, 0, 255),   # Blue
-    'C': graphics.Color(0, 0, 255),   # Blue
-    'B': graphics.Color(255, 100, 0),    # Orange
+    # Blue
+    'A': mta_blue, 'C': mta_blue, 'E': mta_blue,
+    
+    # Orange
+    'B': mta_orange, 'D': mta_orange, 'F': mta_orange, 'M': mta_orange,
+    
+    # Light Green
+    'G': mta_light_green,
+    
+    # Brown
+    'J': mta_brown, 'Z': mta_brown,
+    
+    # Light Gray
+    'L': mta_light_gray,
+    
+    # Yellow
+    'N': mta_yellow, 'Q': mta_yellow, 'R': mta_yellow, 'W': mta_yellow,
+    
+    # Red
+    '1': mta_red, '2': mta_red, '3': mta_red,
+    
+    # Dark Green
+    '4': mta_dark_green, '5': mta_dark_green, '6': mta_dark_green,
+    
+    # Purple
+    '7': mta_purple,
+    
+    # Dark Gray (Shuttles)
+    'S': mta_dark_gray,
 }
-default_color = graphics.Color(200, 200, 200)
+
+# Darker fallback gray so white text is readable if a route goes rogue
+default_color = mta_default
 
 
 def get_portal_ssid():
-    """Extracts the exact SSID from the systemd service file."""
+    """Reads the SSID from the system JSON configuration file."""
     try:
-        with open('/etc/systemd/system/wifi-connect.service', 'r') as f:
-            content = f.read()
-        # Look for --portal-ssid "WhateverName"
-        match = re.search(r'--portal-ssid\s+"([^"]+)"', content)
-        if match:
-            return match.group(1)
+        with open('/etc/subway-clock.json', 'r') as f:
+            config = json.load(f)
+            return config.get('portal_ssid', 'setup-wifi')
     except Exception as e:
-        print(f"Error reading SSID: {e}")
+        print(f"Error reading JSON config: {e}")
 
-    return "setup-wifi?"  # Fallback just in case
+    return "SubwayClock"  # Fallback
+
 
 def get_portal_ip():
     """Gets the live IP address of the Pi's Access Point."""
     try:
         # 'hostname -I' returns a space-separated list of active IPs
-        result = subprocess.run(['hostname', '-I'], stdout=subprocess.PIPE, text=True)
+        result = subprocess.run(['hostname', '-I'],
+                                stdout=subprocess.PIPE, text=True)
         ips = result.stdout.strip().split()
         if ips:
             return ips[0]
     except Exception as e:
         print(f"Error reading IP: {e}")
 
-    return "192.168.42.1"  # Balena's standard default fallback
+    return "- 192.168.42.1"  # Balena's standard default fallback
 
 
 class NoWeatherException(Exception):
@@ -152,19 +214,14 @@ def draw_route_bullet(canvas, font, x, y, route, bg_color):
     graphics.DrawText(canvas, train_font, x + 2, y, white, route)
 
 
-def fetch_weather():
-    # Define the base endpoint
+def fetch_weather(lat, lon):
     weather_endpoint = "https://api.open-meteo.com/v1/forecast"
-
-    # Build the dictionary of parameters
     weather_query_params = {
-        "latitude": 41.50,
-        "longitude": -73.97,
+        "latitude": lat,
+        "longitude": lon,
         "current_weather": "true",
         "temperature_unit": "fahrenheit"
     }
-
-    # Pass the dictionary to the 'params' argument
     try:
         # Pings Open-Meteo for local Beacon, NY forecast
         response = requests.get(weather_endpoint,
@@ -197,7 +254,7 @@ def fetch_weather():
         raise NoWeatherException from e
 
 
-def fetch_trains():
+def fetch_trains(stop_ids, active_routes):
     arrivals = []
 
     for url in FEED_URLS:
@@ -214,11 +271,11 @@ def fetch_trains():
             route_id = entity.trip_update.trip.route_id
 
             # We only care about A, C, and B trains
-            if route_id not in ['A', 'C', 'B']:
+            if '*' not in active_routes and route_id not in active_routes:
                 continue
 
             for stop_time in entity.trip_update.stop_time_update:
-                if stop_time.stop_id != STOP_ID:
+                if stop_time.stop_id not in stop_ids:
                     continue
                 arrival_time = stop_time.arrival.time
                 if arrival_time - int(time.time()) > 60:
@@ -234,14 +291,14 @@ def fetch_trains():
 print("Starting Subway Clock... Press Ctrl+C to exit.")
 
 
-def update_brightness(matrix, current_brightness):
+def update_brightness(matrix, current_brightness, day_b,
+                      night_b, night_start, night_end):
     current_hour = time.localtime().tm_hour
 
-    # Check if the current hour is late at night OR early morning
-    if current_hour >= NIGHT_START_HOUR or current_hour < NIGHT_END_HOUR:
-        target_brightness = NIGHT_BRIGHTNESS
+    if current_hour >= night_start or current_hour < night_end:
+        target_brightness = night_b
     else:
-        target_brightness = DAY_BRIGHTNESS
+        target_brightness = day_b
 
     if current_brightness != target_brightness:
         matrix.brightness = current_brightness = target_brightness
@@ -284,25 +341,37 @@ def display_wifi_info(matrix, canvas):
 weather_text = ''
 current_brightness = None
 while True:
+    config = load_config()
+
+    if captive_portal_running():
+        print("Detected captive portal running, updating display")
+        canvas = display_wifi_info(matrix, canvas)
+        time.sleep(10)
+        continue
     try:
         trains = []
-        trains = fetch_trains()
+        trains = fetch_trains(config['stop_ids'], config['routes'])
     except Exception as e:
-        print(str(e))
+        print(f"failed to fetch train info: ${str(e)}")
     try:
         new_weather_text = ''
-        new_weather_text = fetch_weather()
+        new_weather_text = fetch_weather(config['weather_lat'], config['weather_lon'])
         weather_text = new_weather_text
     except Exception as e:
-        print(str(e))
+        print(f"failed to fetch weather info: ${str(e)}")
 
     if not trains and not new_weather_text:
-        if captive_portal_running():
-            canvas = display_wifi_info(matrix, canvas)
         time.sleep(10)
         continue
 
-    current_brightness = update_brightness(matrix, current_brightness)
+    current_brightness = update_brightness(
+        matrix,
+        current_brightness,
+        config['day_brightness'],
+        config['night_brightness'],
+        config['night_start_hour'],
+        config['night_end_hour']
+    )
     canvas.Clear()
 
     # Start the first line's baseline at exactly pixel 8

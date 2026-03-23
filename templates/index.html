@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Subway Clock Setup</title>
+</head>
+<body style="font-family: sans-serif; padding: 20px;">
+    <h2>Subway Clock Settings</h2>
+    <form method="POST">
+        <label><b>Stop IDs</b> (comma separated):</label><br>
+        <input type="text" name="stop_ids" value="{{ ', '.join(config.get('stop_ids', [])) }}" size="40"><br><br>
+        
+        <label><b>Routes</b> (comma separated, use * for all):</label><br>
+        <input type="text" name="routes" value="{{ ', '.join(config.get('routes', [])) }}" size="40"><br><br>
+
+        <label><b>Day Brightness</b> (0-100):</label><br>
+        <input type="number" name="day_brightness" value="{{ config.get('day_brightness', 100) }}"><br><br>
+
+        <label><b>Night Brightness</b> (0-100):</label><br>
+        <input type="number" name="night_brightness" value="{{ config.get('night_brightness', 2) }}"><br><br>
+
+        <label><b>Weather Latitude</b>:</label><br>
+        <input type="text" name="weather_lat" value="{{ config.get('weather_lat', 41.50) }}"><br><br>
+
+        <label><b>Weather Longitude</b>:</label><br>
+        <input type="text" name="weather_lon" value="{{ config.get('weather_lon', -73.97) }}"><br><br>
+
+	<label><b>Night Mode Start Hour</b> (0-23):</label><br>
+        <input type="number" name="night_start_hour" value="{{ config.get('night_start_hour', 20) }}" min="0" max="23"><br><br>
+
+        <label><b>Night Mode End Hour</b> (0-23):</label><br>
+        <input type="number" name="night_end_hour" value="{{ config.get('night_end_hour', 8) }}" min="0" max="23"><br><br>
+
+        <input type="hidden" name="portal_ssid" value="{{ config.get('portal_ssid', 'SubwayClock') }}">
+        
+        <button type="submit" style="padding: 10px 20px; font-size: 16px;">Save Changes</button>
+    </form>
+    <p><i>Note: The clock will automatically update within 30 seconds of saving.</i></p>
+</body>
+</html>
