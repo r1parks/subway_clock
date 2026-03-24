@@ -325,6 +325,17 @@ def display_wifi_info(matrix, canvas):
     return matrix.SwapOnVSync(canvas)
 
 
+def route_name(route_id):
+    route_id_translation = {
+        "GS": "S",
+        "FS": "S",
+        "H":  "S",
+        "SI": "S",
+        "SIR": "S",
+    }
+    return route_id_translation.get(route_id, route_id)
+
+
 weather_text = ''
 current_brightness = None
 while True:
@@ -370,7 +381,8 @@ while True:
 
     # 1. Display the next 3 trains
     for train in trains[:3]:
-        route = train['route']
+        route_id = train['route']
+        route = route_name(route_id)
         minutes = max(0, int((train['time'] - now) / 60))
 
         bg_color = colors.get(route, default_color)
