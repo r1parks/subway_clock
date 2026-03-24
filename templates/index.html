@@ -2,12 +2,42 @@
 <html>
 <head>
     <title>Subway Clock Setup</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .tag-container {
+            display: flex; flex-wrap: wrap; gap: 8px;
+            margin-bottom: 15px; min-height: 40px;
+            padding: 10px; border: 1px solid #ccc;
+            border-radius: 5px; background-color: #f9f9f9;
+        }
+        .stop-tag {
+            display: inline-flex; align-items: center;
+            background-color: #0078D7; color: white;
+            padding: 5px 10px; border-radius: 15px; font-size: 14px;
+        }
+        .remove-tag { margin-left: 8px; cursor: pointer; font-weight: bold; }
+        .remove-tag:hover { color: #ffcccc; }
+
+        /* Simple styling for the search bar */
+        #stop-search {
+            width: 100%; padding: 8px; margin-bottom: 10px;
+            box-sizing: border-box; border: 1px solid #aaa;
+        }
+    </style>
 </head>
 <body style="font-family: sans-serif; padding: 20px;">
     <h2>Subway Clock Settings</h2>
     <form method="POST">
-        <label><b>Stop IDs</b> (comma separated):</label><br>
-        <input type="text" name="stop_ids" value="{{ ', '.join(config.get('stop_ids', [])) }}" size="40"><br><br>
+	<div id="tag-container" class="tag-container"></div>
+
+        <label><b>Stops</b> (Scroll to find. On desktop, hold Ctrl/Cmd to select multiple):</label><br>
+        <select name="stop_ids" multiple size="8" style="width: 100%; max-width: 400px; font-family: monospace;">
+            {% for stop_id, stop_name in all_stops.items() %}
+                <option value="{{ stop_id }}" {% if stop_id in config.get('stop_ids', []) %}selected{% endif %}>
+                    {{ stop_name }}
+                </option>
+            {% endfor %}
+        </select><br><br>
         
         <label><b>Routes</b> (comma separated, use * for all):</label><br>
         <input type="text" name="routes" value="{{ ', '.join(config.get('routes', [])) }}" size="40"><br><br>

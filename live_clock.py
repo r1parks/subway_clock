@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import logging
 import os
 import sys
 import time
@@ -14,9 +15,14 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 STOP_ID = "A19S"                   # 96th St Station (Downtown / Southbound)
 
 FEED_URLS = [
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw"
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw",
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l",
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g",
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-jz",
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si",
 ]
 
 # --- Matrix Setup ---
@@ -51,13 +57,13 @@ def load_config():
                 # Overwrites defaults with whatever is actually in the file
                 default_config.update(user_config)
     except Exception as e:
-        print(f"Error reading JSON config: {e}")
+        logging.error(f"Error reading JSON config: {e}")
 
     return default_config
 
 
 def clear_matrix_and_exit(signum, frame):
-    print("Stopping service and clearing matrix...")
+    logging.info("Stopping service and clearing matrix...")
     matrix.Clear()  # This physically turns off all LEDs
     sys.exit(0)
 
@@ -69,7 +75,7 @@ signal.signal(signal.SIGINT, clear_matrix_and_exit)
 # Load a smaller font to fit 4 lines of text (8px per line)
 font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
 if not os.path.exists(font_path):
-    print(f"Error: Font not found at {font_path}")
+    logging.critical(f"Error: Font not found at {font_path}")
     sys.exit(1)
 
 font = graphics.Font()
@@ -77,7 +83,7 @@ font.LoadFont(font_path)
 
 train_font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
 if not os.path.exists(train_font_path):
-    print(f"Error: Font not found at {font_path}")
+    logging.critical(f"Error: Font not found at {font_path}")
     sys.exit(1)
 
 train_font = graphics.Font()
@@ -85,7 +91,7 @@ train_font.LoadFont(train_font_path)
 
 time_font_path = "/home/robert/rpi-rgb-led-matrix/fonts/4x6.bdf"
 if not os.path.exists(time_font_path):
-    print(f"Error: Font not found at {time_font_path}")
+    logging.critical(f"Error: Font not found at {time_font_path}")
     sys.exit(1)
 
 time_font = graphics.Font()
@@ -100,48 +106,29 @@ graphics.DrawText(canvas,
 canvas = matrix.SwapOnVSync(canvas)
 
 # --- Base Colors (Tuned for LED Matrices) ---
-mta_blue        = graphics.Color(0, 50, 255)
-mta_orange      = graphics.Color(255, 100, 0)
+mta_blue = graphics.Color(0, 50, 255)
+mta_orange = graphics.Color(255, 100, 0)
 mta_light_green = graphics.Color(100, 255, 50)
-mta_brown       = graphics.Color(150, 100, 50)
-mta_light_gray  = graphics.Color(100, 100, 100)
-mta_yellow      = graphics.Color(200, 150, 0)
-mta_red         = graphics.Color(255, 0, 0)
-mta_dark_green  = graphics.Color(0, 200, 50)
-mta_purple      = graphics.Color(200, 0, 200)
-mta_dark_gray   = graphics.Color(75, 75, 75)
-mta_default     = graphics.Color(50, 50, 50)
+mta_brown = graphics.Color(150, 100, 50)
+mta_light_gray = graphics.Color(100, 100, 100)
+mta_yellow = graphics.Color(200, 150, 0)
+mta_red = graphics.Color(255, 0, 0)
+mta_dark_green = graphics.Color(0, 200, 50)
+mta_purple = graphics.Color(200, 0, 200)
+mta_dark_gray = graphics.Color(75, 75, 75)
+mta_default = graphics.Color(50, 50, 50)
 
 # --- MTA Route Map ---
 colors = {
-    # Blue
     'A': mta_blue, 'C': mta_blue, 'E': mta_blue,
-    
-    # Orange
     'B': mta_orange, 'D': mta_orange, 'F': mta_orange, 'M': mta_orange,
-    
-    # Light Green
     'G': mta_light_green,
-    
-    # Brown
     'J': mta_brown, 'Z': mta_brown,
-    
-    # Light Gray
     'L': mta_light_gray,
-    
-    # Yellow
     'N': mta_yellow, 'Q': mta_yellow, 'R': mta_yellow, 'W': mta_yellow,
-    
-    # Red
     '1': mta_red, '2': mta_red, '3': mta_red,
-    
-    # Dark Green
     '4': mta_dark_green, '5': mta_dark_green, '6': mta_dark_green,
-    
-    # Purple
     '7': mta_purple,
-    
-    # Dark Gray (Shuttles)
     'S': mta_dark_gray,
 }
 
@@ -156,7 +143,7 @@ def get_portal_ssid():
             config = json.load(f)
             return config.get('portal_ssid', 'setup-wifi')
     except Exception as e:
-        print(f"Error reading JSON config: {e}")
+        logging.error(f"Error reading JSON config: {e}")
 
     return "SubwayClock"  # Fallback
 
@@ -171,7 +158,7 @@ def get_portal_ip():
         if ips:
             return ips[0]
     except Exception as e:
-        print(f"Error reading IP: {e}")
+        logging.error(f"Error reading IP: {e}")
 
     return "- 192.168.42.1"  # Balena's standard default fallback
 
@@ -250,7 +237,7 @@ def fetch_weather(lat, lon):
 
         return f"{temp}° {cond}"
     except Exception as e:
-        print(f"Weather fetch error: {e}")
+        logging.error(f"Weather fetch error: {e}")
         raise NoWeatherException from e
 
 
@@ -288,7 +275,7 @@ def fetch_trains(stop_ids, active_routes):
     return arrivals
 
 
-print("Starting Subway Clock... Press Ctrl+C to exit.")
+logging.info("Starting Subway Clock... Press Ctrl+C to exit.")
 
 
 def update_brightness(matrix, current_brightness, day_b,
@@ -318,7 +305,7 @@ def captive_portal_running():
         # If it's running, systemd returns the word 'active'
         return result.stdout.strip() == 'active'
     except Exception as e:
-        print(str(e))
+        logging.exception(e)
         return False
 
 
@@ -344,7 +331,7 @@ while True:
     config = load_config()
 
     if captive_portal_running():
-        print("Detected captive portal running, updating display")
+        logging.info("Detected captive portal running, updating display")
         canvas = display_wifi_info(matrix, canvas)
         time.sleep(10)
         continue
@@ -352,13 +339,16 @@ while True:
         trains = []
         trains = fetch_trains(config['stop_ids'], config['routes'])
     except Exception as e:
-        print(f"failed to fetch train info: ${str(e)}")
+        logging.error("failed to fetch train info")
+        logging.exception(e)
     try:
         new_weather_text = ''
-        new_weather_text = fetch_weather(config['weather_lat'], config['weather_lon'])
+        new_weather_text = fetch_weather(config['weather_lat'],
+                                         config['weather_lon'])
         weather_text = new_weather_text
     except Exception as e:
-        print(f"failed to fetch weather info: ${str(e)}")
+        logging.error("failed to fetch weather info")
+        logging.exception(e)
 
     if not trains and not new_weather_text:
         time.sleep(10)
