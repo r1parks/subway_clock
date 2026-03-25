@@ -9,6 +9,7 @@ import time
 import requests
 import signal
 import subprocess
+import qrcode
 from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
@@ -99,7 +100,7 @@ font.LoadFont(font_path)
 
 train_font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
 if not os.path.exists(train_font_path):
-    logging.critical(f"Error: Font not found at {font_path}")
+    logging.critical(f"Error: Font not found at {train_font_path}")
     sys.exit(1)
 
 train_font = graphics.Font()
@@ -298,10 +299,6 @@ logging.info("Starting Subway Clock... Press Ctrl+C to exit.")
 def is_night_mode(night_start, night_end):
     now = datetime.now().time()
 
-    # Parse the "HH:MM" strings from the config into datetime.time objects
-    night_start = config.get('night_start_time', '20:00')
-    night_end = config.get('night_end_time', '08:00')
-
     start_time = datetime.strptime(night_start, "%H:%M").time()
     end_time = datetime.strptime(night_end, "%H:%M").time()
 
@@ -342,19 +339,31 @@ def captive_portal_running():
         return False
 
 
-def display_wifi_info(matrix, canvas):
+def display_wifi_qr(matrix, canvas):
+    ssid = get_portal_ssid()
+    wifi_string = f"WIFI:S:{ssid};T:nopass;;"
+
+    qr = qrcode.QRCode(
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=1,
+        border=1,
+    )
+    qr.add_data(wifi_string)
+    qr.make(fit=True)
+
+    qr_matrix = qr.get_matrix()
+    qr_size = len(qr_matrix)
+
     canvas.Clear()
-    amber = graphics.Color(200, 150, 0)
-    text_lines = ['SSID:', f' {get_portal_ssid()}', '', get_portal_ip()]
-    y_pos = 7
-    for line in text_lines:
-        graphics.DrawText(canvas,
-                          time_font,
-                          0,
-                          y_pos,
-                          amber,
-                          line)
-        y_pos += 8
+
+    x_offset = (64 - qr_size) // 2
+    y_offset = (32 - qr_size) // 2
+
+    for y, row in enumerate(qr_matrix):
+        for x, cell in enumerate(row):
+            if cell:
+                canvas.SetPixel(x + x_offset, y + y_offset, 255, 255, 255)
+
     return matrix.SwapOnVSync(canvas)
 
 
@@ -367,6 +376,7 @@ def route_name(route_id):
         "SIR": "S",
     }
     return route_id_translation.get(route_id, route_id)
+
 
 LAT = None
 LON = None
@@ -398,13 +408,14 @@ def get_lat_lon_from_zip(zip_code):
 
 
 weather_text = ''
+new_weather_text = ''
 current_brightness = None
 while True:
     config = load_config()
 
     if captive_portal_running():
         logging.info("Detected captive portal running, updating display")
-        canvas = display_wifi_info(matrix, canvas)
+        canvas = display_wifi_qr(matrix, canvas)
         time.sleep(10)
         continue
     try:
