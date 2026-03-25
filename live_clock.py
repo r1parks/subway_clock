@@ -15,8 +15,6 @@ from google.transit import gtfs_realtime_pb2
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
 # --- Configuration ---
-STOP_ID = "A19S"                   # 96th St Station (Downtown / Southbound)
-
 FEED_URLS = [
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",
@@ -170,20 +168,6 @@ def get_portal_ssid():
 
     return "SubwayClock"  # Fallback
 
-
-def get_portal_ip():
-    """Gets the live IP address of the Pi's Access Point."""
-    try:
-        # 'hostname -I' returns a space-separated list of active IPs
-        result = subprocess.run(['hostname', '-I'],
-                                stdout=subprocess.PIPE, text=True)
-        ips = result.stdout.strip().split()
-        if ips:
-            return ips[0]
-    except Exception as e:
-        logging.error(f"Error reading IP: {e}")
-
-    return "- 192.168.42.1"  # Balena's standard default fallback
 
 
 class NoWeatherException(Exception):
@@ -368,7 +352,7 @@ def display_wifi_qr(matrix, canvas):
     for y, row in enumerate(qr_matrix):
         for x, cell in enumerate(row):
             if cell:
-                canvas.SetPixel(x + x_offset, y + y_offset, 255, 255, 255)
+                canvas.SetPixel(x + x_offset, y + y_offset, 0, 0, 255)
 
     return matrix.SwapOnVSync(canvas)
 
