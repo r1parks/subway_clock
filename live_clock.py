@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import fcntl
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ import time
 import requests
 import signal
 import subprocess
+from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
@@ -37,6 +39,21 @@ canvas = matrix.CreateFrameCanvas()
 CONFIG_FILE = '/etc/subway-clock.json'
 
 
+def acquire_lock():
+    lock_file_path = '/tmp/live_clock.lock'
+    try:
+        lock_file = open(lock_file_path, 'w')
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_file
+
+    except (BlockingIOError, IOError):
+        print("Failed to acquire lock. Exiting...")
+        sys.exit(1)
+
+
+_LOCK = acquire_lock()
+
+
 def load_config():
     """Reads the SSOT config, supplying safe defaults if missing."""
     default_config = {
@@ -45,10 +62,9 @@ def load_config():
         "routes": ["A", "C", "B"],
         "day_brightness": 100,
         "night_brightness": 2,
-        "night_start_hour": 20,
-        "night_end_hour": 8,
-        "weather_lat": 41.50,
-        "weather_lon": -73.97
+        "night_start_time": "20:00",
+        "night_end_time": "8:00",
+        "weather_zip": 10025,
     }
     try:
         if os.path.exists(CONFIG_FILE):
@@ -201,8 +217,9 @@ def draw_route_bullet(canvas, font, x, y, route, bg_color):
     graphics.DrawText(canvas, train_font, x + 2, y, white, route)
 
 
-def fetch_weather(lat, lon):
+def fetch_weather(zip_code):
     weather_endpoint = "https://api.open-meteo.com/v1/forecast"
+    lat, lon = get_lat_lon_from_zip(zip_code)
     weather_query_params = {
         "latitude": lat,
         "longitude": lon,
@@ -278,11 +295,27 @@ def fetch_trains(stop_ids, active_routes):
 logging.info("Starting Subway Clock... Press Ctrl+C to exit.")
 
 
+def is_night_mode(night_start, night_end):
+    now = datetime.now().time()
+
+    # Parse the "HH:MM" strings from the config into datetime.time objects
+    night_start = config.get('night_start_time', '20:00')
+    night_end = config.get('night_end_time', '08:00')
+
+    start_time = datetime.strptime(night_start, "%H:%M").time()
+    end_time = datetime.strptime(night_end, "%H:%M").time()
+
+    # Check if current time falls in the window (handling midnight rollover)
+    if start_time < end_time:
+        return start_time <= now <= end_time
+    else:
+        # The window crosses midnight (e.g., 20:00 to 08:00)
+        return now >= start_time or now <= end_time
+
+
 def update_brightness(matrix, current_brightness, day_b,
                       night_b, night_start, night_end):
-    current_hour = time.localtime().tm_hour
-
-    if current_hour >= night_start or current_hour < night_end:
+    if is_night_mode(night_start, night_end):
         target_brightness = night_b
     else:
         target_brightness = day_b
@@ -335,6 +368,34 @@ def route_name(route_id):
     }
     return route_id_translation.get(route_id, route_id)
 
+LAT = None
+LON = None
+WEATHER_ZIP = None
+
+
+def get_lat_lon_from_zip(zip_code):
+    """Translates a US Zip Code to Latitude and Longitude using a free API."""
+    global LAT, LON, WEATHER_ZIP
+    if WEATHER_ZIP == zip_code and LAT is not None and LON is not None:
+        return LAT, LON
+
+    WEATHER_ZIP = zip_code
+    url = f"http://api.zippopotam.us/us/{zip_code}"
+
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+
+        LAT = float(data['places'][0]['latitude'])
+        LON = float(data['places'][0]['longitude'])
+
+        return LAT, LON
+
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to translate Zip Code {zip_code}: {e}")
+        return 41.50, -73.97
+
 
 weather_text = ''
 current_brightness = None
@@ -354,8 +415,7 @@ while True:
         logging.exception(e)
     try:
         new_weather_text = ''
-        new_weather_text = fetch_weather(config['weather_lat'],
-                                         config['weather_lon'])
+        new_weather_text = fetch_weather(config['weather_zip'])
         weather_text = new_weather_text
     except Exception as e:
         logging.error("failed to fetch weather info")
@@ -370,12 +430,11 @@ while True:
         current_brightness,
         config['day_brightness'],
         config['night_brightness'],
-        config['night_start_hour'],
-        config['night_end_hour']
+        config['night_start_time'],
+        config['night_end_time']
     )
     canvas.Clear()
 
-    # Start the first line's baseline at exactly pixel 8
     y_pos = 7
     now = int(time.time())
 

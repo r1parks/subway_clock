@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-from flask import Flask, render_template, request, redirect, url_for
+import logging
 import json
+from flask import Flask, render_template, request, redirect, url_for
 
 app = Flask(__name__)
 CONFIG_FILE = '/etc/subway-clock.json'
@@ -10,6 +11,7 @@ CONFIG_FILE = '/etc/subway-clock.json'
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
+        logging.info('received form: {request.form}')
         new_config = {
             "portal_ssid": request.form.get('portal_ssid', 'SubwayClock'),
 
@@ -20,10 +22,9 @@ def index():
             ],
             "day_brightness": int(request.form.get('day_brightness', 100)),
             "night_brightness": int(request.form.get('night_brightness', 2)),
-            "night_start_hour": int(request.form.get('night_start_hour', 20)),
-            "night_end_hour": int(request.form.get('night_end_hour', 8)),
-            "weather_lat": float(request.form.get('weather_lat', 41.50)),
-            "weather_lon": float(request.form.get('weather_lon', -73.97))
+            "night_start_time": request.form.get('night_start_time', "20:00"),
+            "night_end_time": request.form.get('night_end_time', "8:00"),
+            "weather_zip": int(request.form.get('weather_zip', 10025)),
         }
 
         with open(CONFIG_FILE, 'w') as f:

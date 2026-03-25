@@ -51,17 +51,14 @@
         <label><b>Night Brightness</b> (0-100):</label><br>
         <input type="number" name="night_brightness" value="{{ config.get('night_brightness', 2) }}"><br><br>
 
-        <label><b>Weather Latitude</b>:</label><br>
-        <input type="text" name="weather_lat" value="{{ config.get('weather_lat', 41.50) }}"><br><br>
+	<label><b>Weather Zip Code</b>:</label><br>
+        <input type="text" name="weather_zip" value="{{ config.get('weather_zip', '12508') }}" pattern="[0-9]{5}" title="Please enter a 5-digit US Zip Code"><br><br>
 
-        <label><b>Weather Longitude</b>:</label><br>
-        <input type="text" name="weather_lon" value="{{ config.get('weather_lon', -73.97) }}"><br><br>
+	<label><b>Night Mode Start Time</b>:</label><br>
+        <input type="time" name="night_start_time" value="{{ config.get('night_start_time', '20:00') }}"><br><br>
 
-        <label><b>Night Mode Start Hour</b> (0-23):</label><br>
-        <input type="number" name="night_start_hour" value="{{ config.get('night_start_hour', 20) }}" min="0" max="23"><br><br>
-
-        <label><b>Night Mode End Hour</b> (0-23):</label><br>
-        <input type="number" name="night_end_hour" value="{{ config.get('night_end_hour', 8) }}" min="0" max="23"><br><br>
+        <label><b>Night Mode End Time</b>:</label><br>
+        <input type="time" name="night_end_time" value="{{ config.get('night_end_time', '08:00') }}"><br><br>
 
         <input type="hidden" name="portal_ssid" value="{{ config.get('portal_ssid', 'SubwayClock') }}">
 
