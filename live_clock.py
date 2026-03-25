@@ -41,14 +41,20 @@ CONFIG_FILE = '/etc/subway-clock.json'
 
 
 def acquire_lock():
-    lock_file_path = '/tmp/live_clock.lock'
+    lock_file_path = '/home/robert/subway_clock/.live_clock.lock'
     try:
         lock_file = open(lock_file_path, 'w')
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return lock_file
 
-    except (BlockingIOError, IOError):
-        print("Failed to acquire lock. Exiting...")
+    except BlockingIOError:
+        # This specifically means the file is successfully locked by another process
+        print("Another instance of live_clock.py is already running. Exiting.")
+        sys.exit(1)
+
+    except PermissionError:
+        # This catches the Linux /tmp ownership security block
+        print(f"Permission denied to access {lock_file_path}. Try deleting the file manually.")
         sys.exit(1)
 
 
