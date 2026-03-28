@@ -1,5 +1,6 @@
 import unittest
-from datetime import datetime, time
+from datetime import datetime, time as dt_time
+import time
 from unittest.mock import MagicMock, patch
 import sys
 
@@ -21,13 +22,13 @@ class TestLiveClock(unittest.TestCase):
         
         # Inside window
         with patch('live_clock.datetime') as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = time(21, 0)
+            mock_datetime.now.return_value.time.return_value = dt_time(21, 0)
             mock_datetime.strptime = datetime.strptime
             self.assertTrue(live_clock.is_night_mode(start, end))
             
         # Outside window
         with patch('live_clock.datetime') as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = time(19, 0)
+            mock_datetime.now.return_value.time.return_value = dt_time(19, 0)
             mock_datetime.strptime = datetime.strptime
             self.assertFalse(live_clock.is_night_mode(start, end))
 
@@ -37,19 +38,19 @@ class TestLiveClock(unittest.TestCase):
         
         # Before midnight
         with patch('live_clock.datetime') as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = time(23, 0)
+            mock_datetime.now.return_value.time.return_value = dt_time(23, 0)
             mock_datetime.strptime = datetime.strptime
             self.assertTrue(live_clock.is_night_mode(start, end))
             
         # After midnight
         with patch('live_clock.datetime') as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = time(1, 0)
+            mock_datetime.now.return_value.time.return_value = dt_time(1, 0)
             mock_datetime.strptime = datetime.strptime
             self.assertTrue(live_clock.is_night_mode(start, end))
             
         # During day
         with patch('live_clock.datetime') as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = time(12, 0)
+            mock_datetime.now.return_value.time.return_value = dt_time(12, 0)
             mock_datetime.strptime = datetime.strptime
             self.assertFalse(live_clock.is_night_mode(start, end))
 
@@ -75,6 +76,56 @@ class TestLiveClock(unittest.TestCase):
             new_brightness = live_clock.update_brightness(mock_matrix, 100, 100, 2, "20:00", "08:00")
             self.assertEqual(new_brightness, 100)
             self.assertEqual(mock_matrix.brightness, 100)
+
+    @patch('live_clock.requests.get')
+    def test_fetch_weather_success(self, mock_get):
+        # Mock successful API response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'current_weather': {
+                'temperature': 72,
+                'weathercode': 0
+            }
+        }
+        mock_get.return_value = mock_response
+        
+        # Mock get_lat_lon_from_zip to avoid another network call
+        with patch('live_clock.get_lat_lon_from_zip', return_value=(40.71, -74.00)):
+            result = live_clock.fetch_weather(10001)
+            self.assertEqual(result, "72° Clear")
+
+    @patch('live_clock.requests.get')
+    def test_fetch_trains_mock(self, mock_get):
+        # Mock a minimal GTFS response for the first call, empty for others
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        
+        # We only want one response to succeed with data
+        mock_empty = MagicMock()
+        mock_empty.status_code = 404 # Skip others
+        
+        mock_get.side_effect = [mock_response] + [mock_empty] * 7
+        
+        with patch('live_clock.gtfs_realtime_pb2.FeedMessage') as mock_feed_class:
+            mock_feed = mock_feed_class.return_value
+            # Create a mock entity
+            entity = MagicMock()
+            entity.HasField.side_effect = lambda x: x == 'trip_update'
+            entity.trip_update.trip.route_id = 'A'
+            
+            stop_time = MagicMock()
+            stop_time.stop_id = 'A19S'
+            stop_time.HasField.side_effect = lambda x: x == 'arrival'
+            stop_time.arrival.HasField.side_effect = lambda x: x == 'time'
+            stop_time.arrival.time = int(time.time()) + 300 # 5 mins from now
+            
+            entity.trip_update.stop_time_update = [stop_time]
+            mock_feed.entity = [entity]
+            
+            arrivals = live_clock.fetch_trains(['A19S'], ['A'])
+            self.assertEqual(len(arrivals), 1)
+            self.assertEqual(arrivals[0]['route'], 'A')
 
 if __name__ == '__main__':
     unittest.main()
