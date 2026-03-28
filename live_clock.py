@@ -13,12 +13,15 @@ import qrcode
 from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+from config_manager import Config
 
 # --- Configuration ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = '/etc/subway-clock.json'
 LOCK_FILE = os.path.join(SCRIPT_DIR, '.live_clock.lock')
 FONTS_DIR = os.path.join(SCRIPT_DIR, 'fonts')
+
+# Initialize global config
+config = Config()
 
 FEED_URLS = [
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
@@ -59,30 +62,6 @@ def acquire_lock():
 
 
 _LOCK = acquire_lock()
-
-
-def load_config():
-    """Reads the SSOT config, supplying safe defaults if missing."""
-    default_config = {
-        "portal_ssid": "SubwayClock",
-        "stop_ids": ["A19S"],
-        "routes": ["A", "C", "B"],
-        "day_brightness": 100,
-        "night_brightness": 2,
-        "night_start_time": "20:00",
-        "night_end_time": "08:00",
-        "weather_zip": 10025,
-    }
-    try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r') as f:
-                user_config = json.load(f)
-                # Overwrites defaults with whatever is actually in the file
-                default_config.update(user_config)
-    except Exception as e:
-        logging.error(f"Error reading JSON config: {e}")
-
-    return default_config
 
 
 def clear_matrix_and_exit(signum, frame):
@@ -162,10 +141,8 @@ default_color = mta_default
 def get_portal_ssid():
     """Reads the SSID from the system JSON configuration file."""
     try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r') as f:
-                config = json.load(f)
-                return config.get('portal_ssid', 'SubwayClock')
+        config.load()
+        return config.get('portal_ssid', 'SubwayClock')
     except Exception as e:
         logging.error(f"Error reading JSON config: {e}")
 
@@ -416,7 +393,7 @@ weather_text = ''
 new_weather_text = ''
 current_brightness = None
 while True:
-    config = load_config()
+    config.load()
 
     if captive_portal_running():
         logging.info("Detected captive portal running, updating display")
@@ -425,13 +402,13 @@ while True:
         continue
     try:
         trains = []
-        trains = fetch_trains(config['stop_ids'], config['routes'])
+        trains = fetch_trains(config.get('stop_ids'), config.get('routes'))
     except Exception as e:
         logging.error("failed to fetch train info")
         logging.exception(e)
     try:
         new_weather_text = ''
-        new_weather_text = fetch_weather(config['weather_zip'])
+        new_weather_text = fetch_weather(config.get('weather_zip'))
         weather_text = new_weather_text
     except Exception as e:
         logging.error("failed to fetch weather info")
@@ -444,10 +421,10 @@ while True:
     current_brightness = update_brightness(
         matrix,
         current_brightness,
-        config['day_brightness'],
-        config['night_brightness'],
-        config['night_start_time'],
-        config['night_end_time']
+        config.get('day_brightness'),
+        config.get('night_brightness'),
+        config.get('night_start_time'),
+        config.get('night_end_time')
     )
     canvas.Clear()
 
