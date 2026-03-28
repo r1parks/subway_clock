@@ -2,10 +2,11 @@ import json
 import os
 import logging
 
-CONFIG_FILE = '/etc/subway-clock.json'
+DEFAULT_CONFIG_FILE = '/etc/subway-clock.json'
 
 class Config:
-    def __init__(self):
+    def __init__(self, config_file=None):
+        self.config_file = config_file or DEFAULT_CONFIG_FILE
         self.defaults = {
             "portal_ssid": "SubwayClock",
             "stop_ids": ["A19S"],
@@ -22,19 +23,19 @@ class Config:
     def load(self):
         """Loads configuration from the file, applying defaults for missing values."""
         try:
-            if os.path.exists(CONFIG_FILE):
-                with open(CONFIG_FILE, 'r') as f:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
                     user_config = json.load(f)
                     self.config.update(user_config)
             else:
-                logging.warning(f"Config file {CONFIG_FILE} not found. Using defaults.")
+                logging.warning(f"Config file {self.config_file} not found. Using defaults.")
         except Exception as e:
             logging.error(f"Error reading JSON config: {e}")
 
     def save(self):
         """Saves the current configuration to the file."""
         try:
-            with open(CONFIG_FILE, 'w') as f:
+            with open(self.config_file, 'w') as f:
                 json.dump(self.config, f, indent=2)
         except Exception as e:
             logging.error(f"Error writing config file: {e}")
