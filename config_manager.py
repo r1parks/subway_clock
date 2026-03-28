@@ -28,7 +28,7 @@ class Config:
                     self.config.update(user_config)
             else:
                 logging.warning(f"Config file {CONFIG_FILE} not found. Using defaults.")
-        except Exception as e:
+        except (json.JSONDecodeError, IOError) as e:
             logging.error(f"Error reading JSON config: {e}")
 
     def save(self):
