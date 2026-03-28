@@ -15,6 +15,11 @@ from google.transit import gtfs_realtime_pb2
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 
 # --- Configuration ---
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = '/etc/subway-clock.json'
+LOCK_FILE = os.path.join(SCRIPT_DIR, '.live_clock.lock')
+FONTS_DIR = os.path.join(SCRIPT_DIR, 'fonts')
+
 FEED_URLS = [
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",
@@ -35,13 +40,10 @@ options.drop_privileges = False  # Required for Bookworm permissions
 matrix = RGBMatrix(options=options)
 canvas = matrix.CreateFrameCanvas()
 
-CONFIG_FILE = '/etc/subway-clock.json'
-
 
 def acquire_lock():
-    lock_file_path = '/home/robert/subway_clock/.live_clock.lock'
     try:
-        lock_file = open(lock_file_path, 'w')
+        lock_file = open(LOCK_FILE, 'w')
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return lock_file
 
@@ -51,8 +53,8 @@ def acquire_lock():
         sys.exit(1)
 
     except PermissionError:
-        # This catches the Linux /tmp ownership security block
-        print(f"Permission denied to access {lock_file_path}. Try deleting the file manually.")
+        # This catches ownership security block
+        print(f"Permission denied to access {LOCK_FILE}. Try deleting the file manually.")
         sys.exit(1)
 
 
@@ -68,7 +70,7 @@ def load_config():
         "day_brightness": 100,
         "night_brightness": 2,
         "night_start_time": "20:00",
-        "night_end_time": "8:00",
+        "night_end_time": "08:00",
         "weather_zip": 10025,
     }
     try:
@@ -93,8 +95,8 @@ def clear_matrix_and_exit(signum, frame):
 signal.signal(signal.SIGTERM, clear_matrix_and_exit)
 signal.signal(signal.SIGINT, clear_matrix_and_exit)
 
-# Load a smaller font to fit 4 lines of text (8px per line)
-font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
+# Load fonts relative to script directory
+font_path = os.path.join(FONTS_DIR, "5x8.bdf")
 if not os.path.exists(font_path):
     logging.critical(f"Error: Font not found at {font_path}")
     sys.exit(1)
@@ -102,15 +104,9 @@ if not os.path.exists(font_path):
 font = graphics.Font()
 font.LoadFont(font_path)
 
-train_font_path = "/home/robert/rpi-rgb-led-matrix/fonts/5x8.bdf"
-if not os.path.exists(train_font_path):
-    logging.critical(f"Error: Font not found at {train_font_path}")
-    sys.exit(1)
+train_font = font
 
-train_font = graphics.Font()
-train_font.LoadFont(train_font_path)
-
-time_font_path = "/home/robert/rpi-rgb-led-matrix/fonts/4x6.bdf"
+time_font_path = os.path.join(FONTS_DIR, "4x6.bdf")
 if not os.path.exists(time_font_path):
     logging.critical(f"Error: Font not found at {time_font_path}")
     sys.exit(1)
@@ -160,9 +156,10 @@ default_color = mta_default
 def get_portal_ssid():
     """Reads the SSID from the system JSON configuration file."""
     try:
-        with open('/etc/subway-clock.json', 'r') as f:
-            config = json.load(f)
-            return config.get('portal_ssid', 'setup-wifi')
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                return config.get('portal_ssid', 'SubwayClock')
     except Exception as e:
         logging.error(f"Error reading JSON config: {e}")
 
@@ -210,19 +207,22 @@ def draw_route_bullet(canvas, font, x, y, route, bg_color):
 
 def fetch_weather(zip_code):
     weather_endpoint = "https://api.open-meteo.com/v1/forecast"
-    lat, lon = get_lat_lon_from_zip(zip_code)
-    weather_query_params = {
-        "latitude": lat,
-        "longitude": lon,
-        "current_weather": "true",
-        "temperature_unit": "fahrenheit"
-    }
     try:
+        lat, lon = get_lat_lon_from_zip(zip_code)
+        weather_query_params = {
+            "latitude": lat,
+            "longitude": lon,
+            "current_weather": "true",
+            "temperature_unit": "fahrenheit"
+        }
         # Pings Open-Meteo for local Beacon, NY forecast
         response = requests.get(weather_endpoint,
                                 params=weather_query_params,
                                 timeout=5)
-        data = response.json()['current_weather']
+        response.raise_for_status()
+        data = response.json().get('current_weather')
+        if not data:
+            raise NoWeatherException("No current weather data in response")
 
         temp = int(data['temperature'])
         code = data['weathercode']
@@ -253,31 +253,40 @@ def fetch_trains(stop_ids, active_routes):
     arrivals = []
 
     for url in FEED_URLS:
-        response = requests.get(url, timeout=10)
-        if response.status_code != 200:
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code != 200:
+                logging.warning(f"Feed {url} returned status {response.status_code}")
+                continue
+
+            feed = gtfs_realtime_pb2.FeedMessage()
+            feed.ParseFromString(response.content)
+
+            for entity in feed.entity:
+                if not entity.HasField('trip_update'):
+                    continue
+                route_id = entity.trip_update.trip.route_id
+
+                # We only care about active routes
+                if '*' not in active_routes and route_id not in active_routes:
+                    continue
+
+                for stop_time in entity.trip_update.stop_time_update:
+                    if stop_time.stop_id not in stop_ids:
+                        continue
+                    if not stop_time.HasField('arrival') or not stop_time.arrival.HasField('time'):
+                        continue
+                        
+                    arrival_time = stop_time.arrival.time
+                    if arrival_time - int(time.time()) > 60:
+                        arrivals.append({
+                            'route': route_id,
+                            'time': arrival_time
+                        })
+        except Exception as e:
+            logging.error(f"Error fetching feed {url}: {e}")
             continue
 
-        feed = gtfs_realtime_pb2.FeedMessage()
-        feed.ParseFromString(response.content)
-
-        for entity in feed.entity:
-            if not entity.HasField('trip_update'):
-                continue
-            route_id = entity.trip_update.trip.route_id
-
-            # We only care about A, C, and B trains
-            if '*' not in active_routes and route_id not in active_routes:
-                continue
-
-            for stop_time in entity.trip_update.stop_time_update:
-                if stop_time.stop_id not in stop_ids:
-                    continue
-                arrival_time = stop_time.arrival.time
-                if arrival_time - int(time.time()) > 60:
-                    arrivals.append({
-                        'route': route_id,
-                        'time': arrival_time
-                    })
     # Sort by arrival time (soonest first)
     arrivals.sort(key=lambda x: x['time'])
     return arrivals
