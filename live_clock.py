@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import fcntl
-import json
 import logging
 import os
 import sys
@@ -41,6 +40,7 @@ font = None
 train_font = None
 time_font = None
 
+
 def acquire_lock():
     try:
         lock_file = open(LOCK_FILE, 'w')
@@ -48,13 +48,16 @@ def acquire_lock():
         return lock_file
 
     except BlockingIOError:
-        # This specifically means the file is successfully locked by another process
-        print("Another instance of live_clock.py is already running. Exiting.")
+        logging.critical(
+                "Another instance of live_clock.py is already running. "
+                "Exiting.")
         sys.exit(1)
 
     except PermissionError:
         # This catches ownership security block
-        print(f"Permission denied to access {LOCK_FILE}. Try deleting the file manually.")
+        logging.critical(
+                f"Permission denied to access {LOCK_FILE}. "
+                "Try deleting the file manually.")
         sys.exit(1)
 
 
@@ -109,6 +112,7 @@ def setup_matrix():
                       'starting...')
     canvas = matrix.SwapOnVSync(canvas)
 
+
 # --- Base Colors (Tuned for LED Matrices) ---
 mta_blue = graphics.Color(0, 50, 255)
 mta_orange = graphics.Color(255, 100, 0)
@@ -149,7 +153,6 @@ def get_portal_ssid():
         logging.error(f"Error reading JSON config: {e}")
 
     return "SubwayClock"  # Fallback
-
 
 
 class NoWeatherException(Exception):
@@ -241,7 +244,8 @@ def fetch_trains(stop_ids, active_routes):
         try:
             response = requests.get(url, timeout=5)
             if response.status_code != 200:
-                logging.warning(f"Feed {url} returned status {response.status_code}")
+                logging.warning(
+                        f"Feed {url} returned status {response.status_code}")
                 continue
 
             feed = gtfs_realtime_pb2.FeedMessage()
@@ -259,9 +263,10 @@ def fetch_trains(stop_ids, active_routes):
                 for stop_time in entity.trip_update.stop_time_update:
                     if stop_time.stop_id not in stop_ids:
                         continue
-                    if not stop_time.HasField('arrival') or not stop_time.arrival.HasField('time'):
+                    if (not stop_time.HasField('arrival')
+                            or not stop_time.arrival.HasField('time')):
                         continue
-                        
+
                     arrival_time = stop_time.arrival.time
                     if arrival_time - int(time.time()) > 60:
                         arrivals.append({
@@ -396,6 +401,8 @@ def run_clock():
     logging.info("Starting Subway Clock... Press Ctrl+C to exit.")
     weather_text = ''
     new_weather_text = ''
+    trains = []
+    new_trains = []
     current_brightness = None
     while True:
         config.load()
@@ -406,8 +413,10 @@ def run_clock():
             time.sleep(10)
             continue
         try:
-            trains = []
-            trains = fetch_trains(config.get('stop_ids'), config.get('routes'))
+            new_trains = []
+            new_trains = fetch_trains(
+                    config.get('stop_ids'), config.get('routes'))
+            trains = new_trains
         except Exception as e:
             logging.error("failed to fetch train info")
             logging.exception(e)
@@ -456,16 +465,16 @@ def run_clock():
             # Move down exactly 8 pixels for the next row
             y_pos += 8
 
-        # 2. Display the weather on Line 4 (y_pos is now exactly 32)
-        # Using a bright yellow/gold to separate it visually from the transit times
         weather_color = graphics.Color(255, 215, 0)
-        graphics.DrawText(canvas, time_font, 2, 31, weather_color, weather_text)
+        graphics.DrawText(
+                canvas, time_font, 2, 31, weather_color, weather_text)
 
         draw_time(canvas)
         canvas = matrix.SwapOnVSync(canvas)
 
         # Wait 30 seconds before polling the APIs again
         time.sleep(30)
+
 
 if __name__ == "__main__":
     _LOCK = acquire_lock()
