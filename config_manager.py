@@ -31,13 +31,18 @@ class Config:
                 logging.warning(f"Config file {self.config_file} not found. Using defaults.")
         except Exception as e:
             logging.error(f"Error reading JSON config: {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while loading config: {e}")
 
     def save(self):
         """Saves the current configuration to the file."""
         try:
             with open(self.config_file, 'w') as f:
                 json.dump(self.config, f, indent=2)
+        except IOError as e:
+            logging.error(f"Error writing config file: {e}")
         except Exception as e:
+            logging.error(f"An unexpected error occurred while writing config: {e}")
             logging.error(f"Error writing config file: {e}")
 
     def get(self, field, default=None):
