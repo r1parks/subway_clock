@@ -141,7 +141,6 @@ default_color = mta_default
 def get_portal_ssid():
     """Reads the SSID from the system JSON configuration file."""
     try:
-        config.load()
         return config.get('portal_ssid', 'SubwayClock')
     except Exception as e:
         logging.error(f"Error reading JSON config: {e}")
