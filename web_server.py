@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 
 import logging
-import json
 import os
 from flask import Flask, render_template, request, redirect, url_for
+from config_manager import Config
 
 app = Flask(__name__)
-CONFIG_FILE = '/etc/subway-clock.json'
 # Use absolute path relative to this script for the project's stops.json
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STOPS_FILE = os.path.join(SCRIPT_DIR, 'stops.json')
 
+# Initialize global config
+config_obj = Config()
 
 def parse_int(value, default, min_val=None, max_val=None):
     try:
@@ -30,9 +31,7 @@ def index():
         logging.info(f'received form: {request.form}')
         new_config = {
             "portal_ssid": request.form.get('portal_ssid', 'SubwayClock'),
-
             "stop_ids": request.form.getlist('stop_ids'),
-
             "routes": [
                 r.strip() for r in request.form.get('routes', '').split(',') if r.strip()
             ],
@@ -43,29 +42,18 @@ def index():
             "weather_zip": parse_int(request.form.get('weather_zip'), 10025),
         }
 
-        try:
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(new_config, f, indent=2)
-        except Exception as e:
-            logging.error(f"Error writing config file: {e}")
-
+        config_obj.update_bulk(new_config)
         return redirect(url_for('index'))
 
     # --- GET REQUEST (Load Page) ---
-    try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r') as f:
-                config = json.load(f)
-        else:
-            config = {}
-    except Exception as e:
-        logging.error(f"Error loading config: {e}")
-        config = {}
+    config_obj.load()
+    config = config_obj.to_dict()
 
     # Load the human-readable stops mapping
     try:
         if os.path.exists(STOPS_FILE):
             with open(STOPS_FILE, 'r') as f:
+                import json
                 all_stops = json.load(f)
         else:
             logging.warning(f"{STOPS_FILE} not found. Run nyc_subway_stops.py first.")
