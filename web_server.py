@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 
 import logging
-import json
+import os
 from flask import Flask, render_template, request, redirect, url_for
+from config_manager import Config
 
 app = Flask(__name__)
-CONFIG_FILE = '/etc/subway-clock.json'
+# Use absolute path relative to this script for the project's stops.json
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+STOPS_FILE = os.path.join(SCRIPT_DIR, 'stops.json')
 
+# Initialize global config
+config_obj = Config()
 
 def parse_int(value, default, min_val=None, max_val=None):
     try:
@@ -26,35 +31,33 @@ def index():
         logging.info(f'received form: {request.form}')
         new_config = {
             "portal_ssid": request.form.get('portal_ssid', 'SubwayClock'),
-
             "stop_ids": request.form.getlist('stop_ids'),
-
             "routes": [
-                r.strip() for r in request.form.get('routes', '').split(',')
+                r.strip() for r in request.form.get('routes', '').split(',') if r.strip()
             ],
             "day_brightness": parse_int(request.form.get('day_brightness'), 100, 0, 100),
             "night_brightness": parse_int(request.form.get('night_brightness'), 2, 0, 100),
             "night_start_time": request.form.get('night_start_time', "20:00"),
-            "night_end_time": request.form.get('night_end_time', "8:00"),
+            "night_end_time": request.form.get('night_end_time', "08:00"),
             "weather_zip": parse_int(request.form.get('weather_zip'), 10025),
         }
 
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(new_config, f, indent=2)
-
+        config_obj.update_bulk(new_config)
         return redirect(url_for('index'))
 
     # --- GET REQUEST (Load Page) ---
-    try:
-        with open(CONFIG_FILE, 'r') as f:
-            config = json.load(f)
-    except Exception:
-        config = {}
+    config_obj.load()
+    config = config_obj.to_dict()
 
-    # Load the human-readable stops mapping we just generated
+    # Load the human-readable stops mapping
     try:
-        with open('/home/robert/subway_clock/stops.json', 'r') as f:
-            all_stops = json.load(f)
+        if os.path.exists(STOPS_FILE):
+            with open(STOPS_FILE, 'r') as f:
+                import json
+                all_stops = json.load(f)
+        else:
+            logging.warning(f"{STOPS_FILE} not found. Run nyc_subway_stops.py first.")
+            all_stops = {}
     except Exception as e:
         logging.error(f"Error loading stops.json: {e}")
         all_stops = {}
@@ -63,5 +66,5 @@ def index():
 
 
 if __name__ == '__main__':
-    # Run on port 80 to avoid users needing to type :5000
+    # Run on port 80 as requested for dedicated hardware service
     app.run(host='0.0.0.0', port=80)
