@@ -104,13 +104,7 @@ if not os.path.exists(font_path):
 font = graphics.Font()
 font.LoadFont(font_path)
 
-train_font_path = os.path.join(FONTS_DIR, "5x8.bdf")
-if not os.path.exists(train_font_path):
-    logging.critical(f"Error: Font not found at {train_font_path}")
-    sys.exit(1)
-
-train_font = graphics.Font()
-train_font.LoadFont(train_font_path)
+train_font = font
 
 time_font_path = os.path.join(FONTS_DIR, "4x6.bdf")
 if not os.path.exists(time_font_path):
