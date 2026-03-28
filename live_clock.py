@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import fcntl
-import json
 import logging
 import os
 import sys
@@ -12,7 +11,42 @@ import subprocess
 import qrcode
 from datetime import datetime
 from google.transit import gtfs_realtime_pb2
-from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+try:
+    from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
+except ImportError:
+    logging.warning("rgbmatrix module not found. Using a mock implementation for local development.")
+    class RGBMatrixOptions:
+        def __init__(self):
+            self.rows = 32
+            self.cols = 64
+            self.hardware_mapping = 'adafruit-hat'
+            self.drop_privileges = False
+
+    class RGBMatrix:
+        def __init__(self, options=None):
+            self.brightness = 100
+        def CreateFrameCanvas(self):
+            return MockCanvas()
+        def Clear(self):
+            pass
+        def SwapOnVSync(self, canvas):
+            return canvas
+
+    class MockCanvas:
+        def Clear(self): pass
+        def SetPixel(self, x, y, r, g, b): pass
+
+    class graphics:
+        class Color:
+            def __init__(self, r, g, b):
+                self.r, self.g, self.b = r, g, b
+        class Font:
+            def __init__(self): pass
+            def LoadFont(self, path): pass
+        @staticmethod
+        def DrawText(canvas, font, x, y, color, text): pass
+        @staticmethod
+        def DrawLine(canvas, x1, y1, x2, y2, color): pass
 from config_manager import Config
 
 # --- Configuration ---
@@ -34,14 +68,12 @@ FEED_URLS = [
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si",
 ]
 
-# --- Matrix Setup ---
-options = RGBMatrixOptions()
-options.rows = 32
-options.cols = 64
-options.hardware_mapping = 'adafruit-hat'
-options.drop_privileges = False  # Required for Bookworm permissions
-matrix = RGBMatrix(options=options)
-canvas = matrix.CreateFrameCanvas()
+# --- Matrix & Font Globals (initialized in run_clock) ---
+matrix = None
+canvas = None
+font = None
+train_font = None
+time_font = None
 
 
 def acquire_lock():
@@ -51,55 +83,70 @@ def acquire_lock():
         return lock_file
 
     except BlockingIOError:
-        # This specifically means the file is successfully locked by another process
-        print("Another instance of live_clock.py is already running. Exiting.")
+        logging.critical(
+                "Another instance of live_clock.py is already running. "
+                "Exiting.")
         sys.exit(1)
 
     except PermissionError:
         # This catches ownership security block
-        print(f"Permission denied to access {LOCK_FILE}. Try deleting the file manually.")
+        logging.critical(
+                f"Permission denied to access {LOCK_FILE}. "
+                "Try deleting the file manually.")
         sys.exit(1)
-
-
-_LOCK = acquire_lock()
 
 
 def clear_matrix_and_exit(signum, frame):
     logging.info("Stopping service and clearing matrix...")
-    matrix.Clear()  # This physically turns off all LEDs
+    if matrix:
+        matrix.Clear()  # This physically turns off all LEDs
     sys.exit(0)
 
 
-# Listen for systemd stop (SIGTERM) and Ctrl+C (SIGINT)
-signal.signal(signal.SIGTERM, clear_matrix_and_exit)
-signal.signal(signal.SIGINT, clear_matrix_and_exit)
+def setup_matrix():
+    global matrix, canvas, font, train_font, time_font
+    # --- Matrix Setup ---
+    options = RGBMatrixOptions()
+    options.rows = 32
+    options.cols = 64
+    options.hardware_mapping = 'adafruit-hat'
+    options.drop_privileges = False  # Required for Bookworm permissions
+    matrix = RGBMatrix(options=options)
+    canvas = matrix.CreateFrameCanvas()
 
-# Load fonts relative to script directory
-font_path = os.path.join(FONTS_DIR, "5x8.bdf")
-if not os.path.exists(font_path):
-    logging.critical(f"Error: Font not found at {font_path}")
-    sys.exit(1)
+    # Load fonts relative to script directory
+    font_path = os.path.join(FONTS_DIR, "5x8.bdf")
+    if not os.path.exists(font_path):
+        logging.critical(f"Error: Font not found at {font_path}")
+        sys.exit(1)
 
-font = graphics.Font()
-font.LoadFont(font_path)
+    font = graphics.Font()
+    font.LoadFont(font_path)
 
-train_font = font
+    train_font_path = os.path.join(FONTS_DIR, "5x8.bdf")
+    if not os.path.exists(train_font_path):
+        logging.critical(f"Error: Font not found at {train_font_path}")
+        sys.exit(1)
 
-time_font_path = os.path.join(FONTS_DIR, "4x6.bdf")
-if not os.path.exists(time_font_path):
-    logging.critical(f"Error: Font not found at {time_font_path}")
-    sys.exit(1)
+    train_font = graphics.Font()
+    train_font.LoadFont(train_font_path)
 
-time_font = graphics.Font()
-time_font.LoadFont(time_font_path)
+    time_font_path = os.path.join(FONTS_DIR, "4x6.bdf")
+    if not os.path.exists(time_font_path):
+        logging.critical(f"Error: Font not found at {time_font_path}")
+        sys.exit(1)
 
-graphics.DrawText(canvas,
-                  font,
-                  4,
-                  16,
-                  graphics.Color(200, 200, 0),
-                  'starting...')
-canvas = matrix.SwapOnVSync(canvas)
+    time_font = graphics.Font()
+    time_font.LoadFont(time_font_path)
+
+    graphics.DrawText(canvas,
+                      font,
+                      4,
+                      16,
+                      graphics.Color(200, 200, 0),
+                      'starting...')
+    canvas = matrix.SwapOnVSync(canvas)
+
 
 # --- Base Colors (Tuned for LED Matrices) ---
 mta_blue = graphics.Color(0, 50, 255)
@@ -140,7 +187,6 @@ def get_portal_ssid():
         logging.error(f"Error reading JSON config: {e}")
 
     return "SubwayClock"  # Fallback
-
 
 
 class NoWeatherException(Exception):
@@ -232,7 +278,8 @@ def fetch_trains(stop_ids, active_routes):
         try:
             response = requests.get(url, timeout=5)
             if response.status_code != 200:
-                logging.warning(f"Feed {url} returned status {response.status_code}")
+                logging.warning(
+                        f"Feed {url} returned status {response.status_code}")
                 continue
 
             feed = gtfs_realtime_pb2.FeedMessage()
@@ -250,9 +297,10 @@ def fetch_trains(stop_ids, active_routes):
                 for stop_time in entity.trip_update.stop_time_update:
                     if stop_time.stop_id not in stop_ids:
                         continue
-                    if not stop_time.HasField('arrival') or not stop_time.arrival.HasField('time'):
+                    if (not stop_time.HasField('arrival')
+                            or not stop_time.arrival.HasField('time')):
                         continue
-                        
+
                     arrival_time = stop_time.arrival.time
                     if arrival_time - int(time.time()) > 60:
                         arrivals.append({
@@ -382,75 +430,90 @@ def get_lat_lon_from_zip(zip_code):
         return 41.50, -73.97
 
 
-weather_text = ''
-new_weather_text = ''
-current_brightness = None
-while True:
-    config.load()
+def run_clock():
+    global canvas
+    logging.info("Starting Subway Clock... Press Ctrl+C to exit.")
+    weather_text = ''
+    new_weather_text = ''
+    trains = []
+    new_trains = []
+    current_brightness = None
+    while True:
+        config.load()
 
-    if captive_portal_running():
-        logging.info("Detected captive portal running, updating display")
-        canvas = display_wifi_qr(matrix, canvas)
-        time.sleep(10)
-        continue
-    try:
-        trains = []
-        trains = fetch_trains(config.get('stop_ids'), config.get('routes'))
-    except Exception as e:
-        logging.error("failed to fetch train info")
-        logging.exception(e)
-    try:
-        new_weather_text = ''
-        new_weather_text = fetch_weather(config.get('weather_zip'))
-        weather_text = new_weather_text
-    except Exception as e:
-        logging.error("failed to fetch weather info")
-        logging.exception(e)
+        if captive_portal_running():
+            logging.info("Detected captive portal running, updating display")
+            canvas = display_wifi_qr(matrix, canvas)
+            time.sleep(10)
+            continue
+        try:
+            new_trains = []
+            new_trains = fetch_trains(
+                    config.get('stop_ids'), config.get('routes'))
+            trains = new_trains
+        except Exception as e:
+            logging.error("failed to fetch train info")
+            logging.exception(e)
+        try:
+            new_weather_text = ''
+            new_weather_text = fetch_weather(config.get('weather_zip'))
+            weather_text = new_weather_text
+        except Exception as e:
+            logging.error("failed to fetch weather info")
+            logging.exception(e)
 
-    if not trains and not new_weather_text:
-        time.sleep(10)
-        continue
+        if not trains and not new_weather_text:
+            time.sleep(10)
+            continue
 
-    current_brightness = update_brightness(
-        matrix,
-        current_brightness,
-        config.get('day_brightness'),
-        config.get('night_brightness'),
-        config.get('night_start_time'),
-        config.get('night_end_time')
-    )
-    canvas.Clear()
+        current_brightness = update_brightness(
+            matrix,
+            current_brightness,
+            config.get('day_brightness'),
+            config.get('night_brightness'),
+            config.get('night_start_time'),
+            config.get('night_end_time')
+        )
+        canvas.Clear()
 
-    y_pos = 7
-    now = int(time.time())
+        y_pos = 7
+        now = int(time.time())
 
-    # 1. Display the next 3 trains
-    for train in trains[:3]:
-        route_id = train['route']
-        route = route_name(route_id)
-        minutes = max(0, int((train['time'] - now) / 60))
+        # 1. Display the next 3 trains
+        for train in trains[:3]:
+            route_id = train['route']
+            route = route_name(route_id)
+            minutes = max(0, int((train['time'] - now) / 60))
 
-        bg_color = colors.get(route, default_color)
-        draw_route_bullet(canvas, font, 0, y_pos, route, bg_color)
+            bg_color = colors.get(route, default_color)
+            draw_route_bullet(canvas, font, 0, y_pos, route, bg_color)
 
-        if minutes == 0:
-            text = "Now"
-        else:
-            text = f"{minutes} min"
+            if minutes == 0:
+                text = "Now"
+            else:
+                text = f"{minutes} min"
 
-        text_color = graphics.Color(200, 200, 200)
-        graphics.DrawText(canvas, font, 11, y_pos, text_color, text)
+            text_color = graphics.Color(200, 200, 200)
+            graphics.DrawText(canvas, font, 11, y_pos, text_color, text)
 
-        # Move down exactly 8 pixels for the next row
-        y_pos += 8
+            # Move down exactly 8 pixels for the next row
+            y_pos += 8
 
-    # 2. Display the weather on Line 4 (y_pos is now exactly 32)
-    # Using a bright yellow/gold to separate it visually from the transit times
-    weather_color = graphics.Color(255, 215, 0)
-    graphics.DrawText(canvas, time_font, 2, 31, weather_color, weather_text)
+        weather_color = graphics.Color(255, 215, 0)
+        graphics.DrawText(
+                canvas, time_font, 2, 31, weather_color, weather_text)
 
-    draw_time(canvas)
-    canvas = matrix.SwapOnVSync(canvas)
+        draw_time(canvas)
+        canvas = matrix.SwapOnVSync(canvas)
 
-    # Wait 30 seconds before polling the APIs again
-    time.sleep(30)
+        # Wait 30 seconds before polling the APIs again
+        time.sleep(30)
+
+
+if __name__ == "__main__":
+    _LOCK = acquire_lock()
+    # Listen for systemd stop (SIGTERM) and Ctrl+C (SIGINT)
+    signal.signal(signal.SIGTERM, clear_matrix_and_exit)
+    signal.signal(signal.SIGINT, clear_matrix_and_exit)
+    setup_matrix()
+    run_clock()
