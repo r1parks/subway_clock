@@ -38,7 +38,10 @@ class Config:
         try:
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(self.config, f, indent=2)
-        except (IOError, TypeError) as e:
+        except IOError as e:
+            logging.error(f"Error writing config file: {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while writing config: {e}")
             logging.error(f"Error writing config file: {e}")
 
     def get(self, field, default=None):
