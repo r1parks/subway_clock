@@ -74,6 +74,7 @@ canvas = None
 font = None
 train_font = None
 time_font = None
+small_font = None
 
 
 def acquire_lock():
@@ -104,7 +105,7 @@ def clear_matrix_and_exit(signum, frame):
 
 
 def setup_matrix():
-    global matrix, canvas, font, train_font, time_font
+    global matrix, canvas, font, train_font, time_font, small_font
     # --- Matrix Setup ---
     options = RGBMatrixOptions()
     options.rows = 32
@@ -138,13 +139,11 @@ def setup_matrix():
 
     time_font = graphics.Font()
     time_font.LoadFont(time_font_path)
+    small_font = time_font
 
-    graphics.DrawText(canvas,
-                      font,
-                      4,
-                      16,
-                      graphics.Color(200, 200, 0),
-                      'starting...')
+    graphics.DrawText(
+            canvas, font, 4, 16, graphics.Color(200, 200, 0), 'starting...'
+    )
     canvas = matrix.SwapOnVSync(canvas)
 
 
@@ -154,7 +153,7 @@ mta_orange = graphics.Color(255, 100, 0)
 mta_light_green = graphics.Color(100, 255, 50)
 mta_brown = graphics.Color(150, 100, 50)
 mta_light_gray = graphics.Color(100, 100, 100)
-mta_yellow = graphics.Color(200, 150, 0)
+mta_yellow = graphics.Color(125, 80, 0)
 mta_red = graphics.Color(255, 0, 0)
 mta_dark_green = graphics.Color(0, 200, 50)
 mta_purple = graphics.Color(200, 0, 200)
@@ -379,13 +378,20 @@ def display_wifi_qr(matrix, canvas):
 
     canvas.Clear()
 
-    x_offset = (64 - qr_size) // 2
+    graphics.DrawText(
+            canvas, small_font, 0, 10, graphics.Color(200, 200, 0), 'scan to'
+    )
+    graphics.DrawText(
+            canvas, small_font, 0, 18, graphics.Color(200, 200, 0), 'connect'
+    )
+
+    x_offset = (64 - qr_size)
     y_offset = (32 - qr_size) // 2
 
     for y, row in enumerate(qr_matrix):
         for x, cell in enumerate(row):
             if cell:
-                canvas.SetPixel(x + x_offset, y + y_offset, 0, 0, 255)
+                canvas.SetPixel(x + x_offset, y + y_offset, 255, 255, 255)
 
     return matrix.SwapOnVSync(canvas)
 
