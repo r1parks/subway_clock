@@ -220,6 +220,7 @@ class SubwayClock:
         stop_ids = self.config.get('stop_ids')
         active_routes = self.config.get('routes')
         arrivals = []
+        now = int(time.time())
 
         for url in self.FEED_URLS:
             try:
@@ -243,7 +244,7 @@ class SubwayClock:
                                 or not stop_time.arrival.HasField('time')):
                             continue
                         arrival_time = stop_time.arrival.time
-                        if arrival_time - int(time.time()) > 60:
+                        if arrival_time - now > 60:
                             arrivals.append({
                                 'route': route_id,
                                 'time': arrival_time
