@@ -147,8 +147,11 @@ class SubwayClock:
 
     def is_night_mode(self, night_start, night_end):
         now = datetime.now().time()
-        start_time = datetime.strptime(night_start, "%H:%M").time()
-        end_time = datetime.strptime(night_end, "%H:%M").time()
+        try:
+            start_time = datetime.strptime(night_start, "%H:%M").time()
+            end_time = datetime.strptime(night_end, "%H:%M").time()
+        except (ValueError, TypeError):
+            return False
 
         if start_time < end_time:
             return start_time <= now <= end_time
