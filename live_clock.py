@@ -112,7 +112,7 @@ class SubwayClock:
 
         # Load fonts
         self.font = self.load_font("5x8.bdf")
-        self.train_font = self.load_font("5x8.bdf")
+        self.train_font = self.font
         self.time_font = self.load_font("4x6.bdf")
         self.small_font = self.time_font
 
@@ -152,8 +152,11 @@ class SubwayClock:
 
     def is_night_mode(self, night_start, night_end):
         now = datetime.now().time()
-        start_time = datetime.strptime(night_start, "%H:%M").time()
-        end_time = datetime.strptime(night_end, "%H:%M").time()
+        try:
+            start_time = datetime.strptime(night_start, "%H:%M").time()
+            end_time = datetime.strptime(night_end, "%H:%M").time()
+        except (ValueError, TypeError):
+            return False
 
         if start_time < end_time:
             return start_time <= now <= end_time
@@ -222,6 +225,7 @@ class SubwayClock:
         stop_ids = self.config.get('stop_ids')
         active_routes = self.config.get('routes')
         new_arrivals = []
+        now = int(time.time())
 
         for url in self.FEED_URLS:
             try:
@@ -245,7 +249,7 @@ class SubwayClock:
                                 or not stop_time.arrival.HasField('time')):
                             continue
                         arrival_time = stop_time.arrival.time
-                        if arrival_time - int(time.time()) > 60:
+                        if arrival_time - now > 60:
                             new_arrivals.append({
                                 'route': route_id,
                                 'time': arrival_time

@@ -104,14 +104,19 @@ def debug():
     logs = {}
     for service in services:
         try:
-            # -n 200 for last 200 lines, --no-pager to avoid hanging
+            # Capture both stdout and stderr separately and combine them
             result = subprocess.run(
                 ['journalctl', '-u', service, '-n', '200', '--no-pager'],
                 capture_output=True,
                 text=True,
                 check=False
             )
-            logs[service] = result.stdout if result.stdout \
+            
+            output = result.stdout
+            if result.stderr:
+                output += f"\n--- Standard Error ---\n{result.stderr}"
+            
+            logs[service] = output if output.strip() \
                 else f"No logs found for {service}"
         except Exception as e:
             logs[service] = f"Error retrieving logs for {service}: {e}"
