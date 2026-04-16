@@ -79,7 +79,7 @@ def debug():
                 text=True,
                 check=False
             )
-            logs[service] = result.stdout if result.stdout else f"No logs found for {service}"
+            logs[service] = (result.stdout + result.stderr).strip() or f"No logs found for {service}"
         except Exception as e:
             logs[service] = f"Error retrieving logs for {service}: {e}"
 
