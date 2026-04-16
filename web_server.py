@@ -77,7 +77,8 @@ def debug():
                 ['journalctl', '-u', service, '-n', '200', '--no-pager'],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
+                timeout=10
             )
             logs[service] = (result.stdout + result.stderr).strip() or f"No logs found for {service}"
         except Exception as e:
