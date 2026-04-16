@@ -14,6 +14,32 @@ STOPS_FILE = os.path.join(SCRIPT_DIR, 'stops.json')
 # Initialize global config
 config_obj = Config()
 
+_stops_cache = None
+
+
+def get_all_stops():
+    """Lazy-loads and caches stops from stops.json."""
+    global _stops_cache
+    if _stops_cache is not None:
+        return _stops_cache
+
+    try:
+        if os.path.exists(STOPS_FILE):
+            with open(STOPS_FILE, 'r') as f:
+                import json
+                _stops_cache = json.load(f)
+        else:
+            logging.warning(
+                f"{STOPS_FILE} not found. Run nyc_subway_stops.py first."
+            )
+            _stops_cache = {}
+    except Exception as e:
+        logging.error(f"Error loading stops.json: {e}")
+        _stops_cache = {}
+
+    return _stops_cache
+
+
 def parse_int(value, default, min_val=None, max_val=None):
     try:
         result = int(value)
@@ -31,16 +57,30 @@ def index():
     if flask.request.method == 'POST':
         logging.info(f'received form: {flask.request.form}')
         new_config = {
-            "portal_ssid": flask.request.form.get('portal_ssid', 'SubwayClock'),
+            "portal_ssid": flask.request.form.get(
+                'portal_ssid', 'SubwayClock'
+            ),
             "stop_ids": flask.request.form.getlist('stop_ids'),
             "routes": [
-                r.strip() for r in flask.request.form.get('routes', '').split(',') if r.strip()
+                r.strip() for r in flask.request.form.get(
+                    'routes', ''
+                ).split(',') if r.strip()
             ],
-            "day_brightness": parse_int(flask.request.form.get('day_brightness'), 100, 0, 100),
-            "night_brightness": parse_int(flask.request.form.get('night_brightness'), 2, 0, 100),
-            "night_start_time": flask.request.form.get('night_start_time', "20:00"),
-            "night_end_time": flask.request.form.get('night_end_time', "08:00"),
-            "weather_zip": parse_int(flask.request.form.get('weather_zip'), 10025),
+            "day_brightness": parse_int(
+                flask.request.form.get('day_brightness'), 100, 0, 100
+            ),
+            "night_brightness": parse_int(
+                flask.request.form.get('night_brightness'), 2, 0, 100
+            ),
+            "night_start_time": flask.request.form.get(
+                'night_start_time', "20:00"
+            ),
+            "night_end_time": flask.request.form.get(
+                'night_end_time', "08:00"
+            ),
+            "weather_zip": parse_int(
+                flask.request.form.get('weather_zip'), 10025
+            ),
         }
 
         config_obj.update_bulk(new_config)
@@ -49,38 +89,35 @@ def index():
     # --- GET REQUEST (Load Page) ---
     config_obj.load()
     config = config_obj.to_dict()
+    all_stops = get_all_stops()
 
-    # Load the human-readable stops mapping
-    try:
-        if os.path.exists(STOPS_FILE):
-            with open(STOPS_FILE, 'r') as f:
-                import json
-                all_stops = json.load(f)
-        else:
-            logging.warning(f"{STOPS_FILE} not found. Run nyc_subway_stops.py first.")
-            all_stops = {}
-    except Exception as e:
-        logging.error(f"Error loading stops.json: {e}")
-        all_stops = {}
-
-    return flask.render_template('index.html', config=config, all_stops=all_stops)
+    return flask.render_template(
+        'index.html', config=config, all_stops=all_stops
+    )
 
 
 @app.route('/debug')
 def debug():
-    services = ['subway-clock.service', 'subway-web.service', 'wifi-connect.service']
+    services = [
+        'subway-clock.service', 'subway-web.service', 'wifi-connect.service'
+    ]
     logs = {}
     for service in services:
         try:
-            # -n 200 for last 200 lines, --no-pager to avoid hanging
+            # Capture both stdout and stderr separately and combine them
             result = subprocess.run(
                 ['journalctl', '-u', service, '-n', '200', '--no-pager'],
                 capture_output=True,
                 text=True,
-                check=False,
-                timeout=10
+                check=False
             )
-            logs[service] = (result.stdout + result.stderr).strip() or f"No logs found for {service}"
+            
+            output = result.stdout
+            if result.stderr:
+                output += f"\n--- Standard Error ---\n{result.stderr}"
+            
+            logs[service] = output if output.strip() \
+                else f"No logs found for {service}"
         except Exception as e:
             logs[service] = f"Error retrieving logs for {service}: {e}"
 

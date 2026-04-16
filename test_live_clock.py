@@ -3,18 +3,22 @@ from datetime import datetime, time as dt_time
 import time
 from unittest.mock import MagicMock, patch
 import sys
-import live_clock
 
 # Mock hardware and transit libraries before importing live_clock
-mock_matrix = MagicMock()
+mock_matrix_lib = MagicMock()
 mock_transit = MagicMock()
-sys.modules['rgbmatrix'] = mock_matrix
+sys.modules['rgbmatrix'] = mock_matrix_lib
 sys.modules['google.transit'] = mock_transit
 sys.modules['google.transit.gtfs_realtime_pb2'] = MagicMock()
 sys.modules['qrcode'] = MagicMock()
 
+import live_clock  # noqa: E402
+
 
 class TestLiveClock(unittest.TestCase):
+    def setUp(self):
+        self.clock = live_clock.SubwayClock()
+
     def test_is_night_mode(self):
         # Case 1: Start < End (e.g., 20:00 to 22:00)
         start = "20:00"
@@ -24,13 +28,13 @@ class TestLiveClock(unittest.TestCase):
         with patch('live_clock.datetime') as mock_datetime:
             mock_datetime.now.return_value.time.return_value = dt_time(21, 0)
             mock_datetime.strptime = datetime.strptime
-            self.assertTrue(live_clock.is_night_mode(start, end))
+            self.assertTrue(self.clock.is_night_mode(start, end))
 
         # Outside window
         with patch('live_clock.datetime') as mock_datetime:
             mock_datetime.now.return_value.time.return_value = dt_time(19, 0)
             mock_datetime.strptime = datetime.strptime
-            self.assertFalse(live_clock.is_night_mode(start, end))
+            self.assertFalse(self.clock.is_night_mode(start, end))
 
         # Case 2: Start > End (Over midnight, e.g., 20:00 to 08:00)
         start = "20:00"
@@ -40,44 +44,89 @@ class TestLiveClock(unittest.TestCase):
         with patch('live_clock.datetime') as mock_datetime:
             mock_datetime.now.return_value.time.return_value = dt_time(23, 0)
             mock_datetime.strptime = datetime.strptime
-            self.assertTrue(live_clock.is_night_mode(start, end))
+            self.assertTrue(self.clock.is_night_mode(start, end))
 
         # After midnight
         with patch('live_clock.datetime') as mock_datetime:
             mock_datetime.now.return_value.time.return_value = dt_time(1, 0)
             mock_datetime.strptime = datetime.strptime
-            self.assertTrue(live_clock.is_night_mode(start, end))
+            self.assertTrue(self.clock.is_night_mode(start, end))
 
         # During day
         with patch('live_clock.datetime') as mock_datetime:
             mock_datetime.now.return_value.time.return_value = dt_time(12, 0)
             mock_datetime.strptime = datetime.strptime
-            self.assertFalse(live_clock.is_night_mode(start, end))
+            self.assertFalse(self.clock.is_night_mode(start, end))
 
     def test_route_name(self):
-        self.assertEqual(live_clock.route_name("GS"), "S")
-        self.assertEqual(live_clock.route_name("FS"), "S")
-        self.assertEqual(live_clock.route_name("A"), "A")
-        self.assertEqual(live_clock.route_name("SIR"), "S")
+        self.assertEqual(self.clock.route_name("GS"), "S")
+        self.assertEqual(self.clock.route_name("FS"), "S")
+        self.assertEqual(self.clock.route_name("A"), "A")
+        self.assertEqual(self.clock.route_name("SIR"), "S")
+
+    def test_map_weather_code(self):
+        self.assertEqual(self.clock.map_weather_code(0), "Clear")
+        self.assertEqual(self.clock.map_weather_code(1), "Cloudy")
+        self.assertEqual(self.clock.map_weather_code(45), "Fog")
+        self.assertEqual(self.clock.map_weather_code(51), "Rain")
+        self.assertEqual(self.clock.map_weather_code(71), "Snow")
+        self.assertEqual(self.clock.map_weather_code(95), "Storm")
+        self.assertEqual(self.clock.map_weather_code(999), "")
+
+    @patch('live_clock.requests.get')
+    def test_get_lat_lon_success(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'places': [{'latitude': '40.71', 'longitude': '-74.00'}]
+        }
+        mock_get.return_value = mock_response
+
+        lat, lon = self.clock.get_lat_lon(10001)
+        self.assertEqual(lat, 40.71)
+        self.assertEqual(lon, -74.00)
+        # Check cache
+        self.assertEqual(self.clock.weather_zip, 10001)
+
+        # Second call should use cache (mock_get.call_count should still be 1)
+        lat, lon = self.clock.get_lat_lon(10001)
+        self.assertEqual(mock_get.call_count, 1)
+
+    @patch('live_clock.requests.get')
+    def test_get_lat_lon_failure(self, mock_get):
+        mock_get.side_effect = Exception("API Down")
+        lat, lon = self.clock.get_lat_lon(10001)
+        # Fallback values
+        self.assertEqual(lat, 41.50)
+        self.assertEqual(lon, -73.97)
 
     def test_update_brightness(self):
-        mock_matrix = MagicMock()
-        mock_matrix.brightness = 100
+        self.clock.matrix = MagicMock()
+        self.clock.matrix.brightness = 100
+        self.clock.current_brightness = 100
+
+        self.clock.config.get = MagicMock(side_effect=lambda k: {
+            'day_brightness': 100,
+            'night_brightness': 2,
+            'night_start_time': "20:00",
+            'night_end_time': "08:00"
+        }.get(k))
 
         # Test switch to night mode
-        with patch('live_clock.is_night_mode', return_value=True):
-            new_brightness = live_clock.update_brightness(
-                    mock_matrix, 100, 100, 2, "20:00", "08:00")
-            self.assertEqual(new_brightness, 2)
-            self.assertEqual(mock_matrix.brightness, 2)
+        with patch.object(live_clock.SubwayClock, 'is_night_mode',
+                          return_value=True):
+            self.clock.update_brightness()
+            self.assertEqual(self.clock.current_brightness, 2)
+            self.assertEqual(self.clock.matrix.brightness, 2)
 
         # Test stay in day mode
-        mock_matrix.brightness = 100
-        with patch('live_clock.is_night_mode', return_value=False):
-            new_brightness = live_clock.update_brightness(
-                    mock_matrix, 100, 100, 2, "20:00", "08:00")
-            self.assertEqual(new_brightness, 100)
-            self.assertEqual(mock_matrix.brightness, 100)
+        self.clock.matrix.brightness = 100
+        self.clock.current_brightness = 100
+        with patch.object(live_clock.SubwayClock, 'is_night_mode',
+                          return_value=False):
+            self.clock.update_brightness()
+            self.assertEqual(self.clock.current_brightness, 100)
+            self.assertEqual(self.clock.matrix.brightness, 100)
 
     @patch('live_clock.requests.get')
     def test_fetch_weather_success(self, mock_get):
@@ -92,10 +141,12 @@ class TestLiveClock(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        # Mock get_lat_lon_from_zip to avoid another network call
-        with patch('live_clock.get_lat_lon_from_zip',
-                   return_value=(40.71, -74.00)):
-            result = live_clock.fetch_weather(10001)
+        self.clock.config.get = MagicMock(return_value=10001)
+
+        # Mock get_lat_lon to avoid another network call
+        with patch.object(live_clock.SubwayClock, 'get_lat_lon',
+                          return_value=(40.71, -74.00)):
+            result = self.clock.fetch_weather()
             self.assertEqual(result, "72° Clear")
 
     @patch('live_clock.requests.get')
@@ -109,6 +160,11 @@ class TestLiveClock(unittest.TestCase):
         mock_empty.status_code = 404  # Skip others
 
         mock_get.side_effect = [mock_response] + [mock_empty] * 7
+
+        self.clock.config.get = MagicMock(side_effect=lambda k: {
+            'stop_ids': ['A19S'],
+            'routes': ['A']
+        }.get(k))
 
         with patch(
                 'live_clock.gtfs_realtime_pb2.FeedMessage') as mock_feed_class:
@@ -127,7 +183,7 @@ class TestLiveClock(unittest.TestCase):
             entity.trip_update.stop_time_update = [stop_time]
             mock_feed.entity = [entity]
 
-            arrivals = live_clock.fetch_trains(['A19S'], ['A'])
+            arrivals = self.clock.fetch_trains()
             self.assertEqual(len(arrivals), 1)
             self.assertEqual(arrivals[0]['route'], 'A')
 
