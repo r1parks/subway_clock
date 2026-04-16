@@ -112,8 +112,9 @@ class TestWebServer(unittest.TestCase):
         original_run = subprocess.run
 
         class MockResult:
-            def __init__(self, stdout):
+            def __init__(self, stdout, stderr=""):
                 self.stdout = stdout
+                self.stderr = stderr
 
         def mock_run(*args, **kwargs):
             return MockResult("mock logs")
