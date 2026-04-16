@@ -409,7 +409,7 @@ class SubwayClock:
 
             weather_color = graphics.Color(255, 215, 0)
             graphics.DrawText(
-                self.canvas, self.font, 2, 31, weather_color, weather_text
+                self.canvas, self.small_font, 2, 31, weather_color, weather_text
             )
             self.draw_time()
             self.canvas = self.matrix.SwapOnVSync(self.canvas)
