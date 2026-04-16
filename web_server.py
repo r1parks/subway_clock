@@ -14,6 +14,31 @@ STOPS_FILE = os.path.join(SCRIPT_DIR, 'stops.json')
 # Initialize global config
 config_obj = Config()
 
+_stops_cache = None
+
+
+def get_all_stops():
+    """Lazy-loads and caches stops from stops.json."""
+    global _stops_cache
+    if _stops_cache is not None:
+        return _stops_cache
+
+    try:
+        if os.path.exists(STOPS_FILE):
+            with open(STOPS_FILE, 'r') as f:
+                import json
+                _stops_cache = json.load(f)
+        else:
+            logging.warning(
+                f"{STOPS_FILE} not found. Run nyc_subway_stops.py first."
+            )
+            _stops_cache = {}
+    except Exception as e:
+        logging.error(f"Error loading stops.json: {e}")
+        _stops_cache = {}
+
+    return _stops_cache
+
 
 def parse_int(value, default, min_val=None, max_val=None):
     try:
@@ -64,21 +89,7 @@ def index():
     # --- GET REQUEST (Load Page) ---
     config_obj.load()
     config = config_obj.to_dict()
-
-    # Load the human-readable stops mapping
-    try:
-        if os.path.exists(STOPS_FILE):
-            with open(STOPS_FILE, 'r') as f:
-                import json
-                all_stops = json.load(f)
-        else:
-            logging.warning(
-                f"{STOPS_FILE} not found. Run nyc_subway_stops.py first."
-            )
-            all_stops = {}
-    except Exception as e:
-        logging.error(f"Error loading stops.json: {e}")
-        all_stops = {}
+    all_stops = get_all_stops()
 
     return flask.render_template(
         'index.html', config=config, all_stops=all_stops

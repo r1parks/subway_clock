@@ -72,27 +72,348 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCK_FILE = os.path.join(SCRIPT_DIR, '.live_clock.lock')
 FONTS_DIR = os.path.join(SCRIPT_DIR, 'fonts')
 
-# Initialize global config
-config = Config()
 
-FEED_URLS = [
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-jz",
-    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si",
-]
+class NoWeatherException(Exception):
+    ...
 
-# --- Matrix & Font Globals (initialized in run_clock) ---
-matrix = None
-canvas = None
-font = None
-train_font = None
-time_font = None
-small_font = None
+
+class SubwayClock:
+    # --- Base Colors (Tuned for LED Matrices) ---
+    COLORS = {
+        'BLUE': graphics.Color(0, 50, 255),
+        'ORANGE': graphics.Color(255, 100, 0),
+        'LIGHT_GREEN': graphics.Color(100, 255, 50),
+        'BROWN': graphics.Color(150, 100, 50),
+        'LIGHT_GRAY': graphics.Color(100, 100, 100),
+        'YELLOW': graphics.Color(125, 80, 0),
+        'RED': graphics.Color(255, 0, 0),
+        'DARK_GREEN': graphics.Color(0, 200, 50),
+        'PURPLE': graphics.Color(200, 0, 200),
+        'DARK_GRAY': graphics.Color(75, 75, 75),
+        'DEFAULT': graphics.Color(50, 50, 50),
+    }
+
+    # --- MTA Route Map ---
+    ROUTE_COLORS = {
+        'A': COLORS['BLUE'], 'C': COLORS['BLUE'], 'E': COLORS['BLUE'],
+        'B': COLORS['ORANGE'], 'D': COLORS['ORANGE'], 'F': COLORS['ORANGE'],
+        'M': COLORS['ORANGE'],
+        'G': COLORS['LIGHT_GREEN'],
+        'J': COLORS['BROWN'], 'Z': COLORS['BROWN'],
+        'L': COLORS['LIGHT_GRAY'],
+        'N': COLORS['YELLOW'], 'Q': COLORS['YELLOW'], 'R': COLORS['YELLOW'],
+        'W': COLORS['YELLOW'],
+        '1': COLORS['RED'], '2': COLORS['RED'], '3': COLORS['RED'],
+        '4': COLORS['DARK_GREEN'], '5': COLORS['DARK_GREEN'],
+        '6': COLORS['DARK_GREEN'],
+        '7': COLORS['PURPLE'],
+        'S': COLORS['DARK_GRAY'],
+    }
+
+    FEED_URLS = [
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/"
+        "nyct%2Fgtfs-ace",
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/"
+        "nyct%2Fgtfs-bdfm",
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/"
+        "nyct%2Fgtfs-nqrw",
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/"
+        "nyct%2Fgtfs-l",
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/"
+        "nyct%2Fgtfs-g",
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/"
+        "nyct%2Fgtfs-jz",
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/"
+        "nyct%2Fgtfs-si",
+    ]
+
+    def __init__(self):
+        self.config = Config()
+        self.matrix = None
+        self.canvas = None
+        self.font = None
+        self.train_font = None
+        self.time_font = None
+        self.small_font = None
+        self.current_brightness = None
+        self.lat = None
+        self.lon = None
+        self.weather_zip = None
+
+    def setup_matrix(self):
+        # --- Matrix Setup ---
+        options = RGBMatrixOptions()
+        options.rows = 32
+        options.cols = 64
+        options.hardware_mapping = 'adafruit-hat'
+        options.drop_privileges = False  # Required for Bookworm permissions
+        self.matrix = RGBMatrix(options=options)
+        self.canvas = self.matrix.CreateFrameCanvas()
+
+        # Load fonts
+        self.font = self.load_font("5x8.bdf")
+        self.train_font = self.load_font("5x8.bdf")
+        self.time_font = self.load_font("4x6.bdf")
+        self.small_font = self.time_font
+
+        graphics.DrawText(
+            self.canvas, self.font, 4, 16,
+            graphics.Color(200, 200, 0), 'starting...'
+        )
+        self.canvas = self.matrix.SwapOnVSync(self.canvas)
+
+    def load_font(self, font_name):
+        font_path = os.path.join(FONTS_DIR, font_name)
+        if not os.path.exists(font_path):
+            logging.critical(f"Error: Font not found at {font_path}")
+            sys.exit(1)
+        font = graphics.Font()
+        font.LoadFont(font_path)
+        return font
+
+    def clear(self):
+        if self.matrix:
+            self.matrix.Clear()
+
+    def update_brightness(self):
+        day_b = self.config.get('day_brightness')
+        night_b = self.config.get('night_brightness')
+        night_start = self.config.get('night_start_time')
+        night_end = self.config.get('night_end_time')
+
+        if self.is_night_mode(night_start, night_end):
+            target_brightness = night_b
+        else:
+            target_brightness = day_b
+
+        if self.current_brightness != target_brightness:
+            self.matrix.brightness = target_brightness
+            self.current_brightness = target_brightness
+
+    def is_night_mode(self, night_start, night_end):
+        now = datetime.now().time()
+        start_time = datetime.strptime(night_start, "%H:%M").time()
+        end_time = datetime.strptime(night_end, "%H:%M").time()
+
+        if start_time < end_time:
+            return start_time <= now <= end_time
+        else:
+            return now >= start_time or now <= end_time
+
+    def get_lat_lon(self, zip_code):
+        if (self.weather_zip == zip_code and self.lat is not None
+                and self.lon is not None):
+            return self.lat, self.lon
+
+        self.weather_zip = zip_code
+        url = f"http://api.zippopotam.us/us/{zip_code}"
+        try:
+            response = requests.get(url, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            self.lat = float(data['places'][0]['latitude'])
+            self.lon = float(data['places'][0]['longitude'])
+            return self.lat, self.lon
+        except Exception as e:
+            logging.error(f"Failed to translate Zip Code {zip_code}: {e}")
+            return 41.50, -73.97
+
+    def fetch_weather(self):
+        zip_code = self.config.get('weather_zip')
+        endpoint = "https://api.open-meteo.com/v1/forecast"
+        try:
+            lat, lon = self.get_lat_lon(zip_code)
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "current_weather": "true",
+                "temperature_unit": "fahrenheit"
+            }
+            response = requests.get(endpoint, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json().get('current_weather')
+            if not data:
+                raise NoWeatherException("No weather data")
+
+            temp = int(data['temperature'])
+            code = data['weathercode']
+            cond = self.map_weather_code(code)
+            return f"{temp}° {cond}"
+        except Exception as e:
+            logging.error(f"Weather fetch error: {e}")
+            raise NoWeatherException from e
+
+    def map_weather_code(self, code):
+        if code == 0:
+            return "Clear"
+        elif code in [1, 2, 3]:
+            return "Cloudy"
+        elif code in [45, 48]:
+            return "Fog"
+        elif code in [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82]:
+            return "Rain"
+        elif code in [71, 73, 75, 77, 85, 86]:
+            return "Snow"
+        elif code in [95, 96, 99]:
+            return "Storm"
+        return ""
+
+    def fetch_trains(self):
+        stop_ids = self.config.get('stop_ids')
+        active_routes = self.config.get('routes')
+        arrivals = []
+
+        for url in self.FEED_URLS:
+            try:
+                response = requests.get(url, timeout=5)
+                if response.status_code != 200:
+                    continue
+                feed = gtfs_realtime_pb2.FeedMessage()
+                feed.ParseFromString(response.content)
+                for entity in feed.entity:
+                    if not entity.HasField('trip_update'):
+                        continue
+                    trip = entity.trip_update.trip
+                    route_id = trip.route_id
+                    if '*' not in active_routes and \
+                            route_id not in active_routes:
+                        continue
+                    for stop_time in entity.trip_update.stop_time_update:
+                        if stop_time.stop_id not in stop_ids:
+                            continue
+                        if (not stop_time.HasField('arrival')
+                                or not stop_time.arrival.HasField('time')):
+                            continue
+                        arrival_time = stop_time.arrival.time
+                        if arrival_time - int(time.time()) > 60:
+                            arrivals.append({
+                                'route': route_id,
+                                'time': arrival_time
+                            })
+            except Exception as e:
+                logging.error(f"Error fetching feed {url}: {e}")
+        arrivals.sort(key=lambda x: x['time'])
+        return arrivals
+
+    def draw_route_bullet(self, x, y, route_id):
+        route = self.route_name(route_id)
+        bg_color = self.ROUTE_COLORS.get(route, self.COLORS['DEFAULT'])
+        center_x = x + 3
+        center_y = y - 3
+        row_widths = [1, 2, 3, 3, 3, 3, 2, 1]
+
+        for i, width in enumerate(row_widths):
+            y_offset = i - 4
+            graphics.DrawLine(self.canvas,
+                              center_x - width,
+                              center_y + y_offset,
+                              center_x + width + 1,
+                              center_y + y_offset,
+                              bg_color)
+
+        white = graphics.Color(255, 255, 255)
+        graphics.DrawText(self.canvas, self.train_font, x + 2, y, white, route)
+
+    def route_name(self, route_id):
+        return {
+            "GS": "S", "FS": "S", "H": "S", "SI": "S", "SIR": "S"
+        }.get(route_id, route_id)
+
+    def draw_time(self):
+        time_text = time.strftime("%-I:%M").rjust(5)
+        time_color = graphics.Color(255, 215, 0)
+        graphics.DrawText(
+            self.canvas, self.time_font, 45, 5, time_color, time_text
+        )
+
+    def captive_portal_running(self):
+        try:
+            result = subprocess.run(
+                ['systemctl', 'is-active', 'wifi-connect.service'],
+                stdout=subprocess.PIPE, text=True
+            )
+            return result.stdout.strip() == 'active'
+        except Exception:
+            return False
+
+    def display_wifi_qr(self):
+        ssid = self.config.get('portal_ssid', 'SubwayClock')
+        wifi_string = f"WIFI:S:{ssid};T:nopass;;"
+        qr = qrcode.QRCode(
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=1, border=1,
+        )
+        qr.add_data(wifi_string)
+        qr.make(fit=True)
+        qr_matrix = qr.get_matrix()
+        qr_size = len(qr_matrix)
+
+        self.canvas.Clear()
+        color = graphics.Color(200, 200, 0)
+        graphics.DrawText(
+            self.canvas, self.small_font, 0, 10, color, 'scan to'
+        )
+        graphics.DrawText(
+            self.canvas, self.small_font, 0, 18, color, 'connect'
+        )
+
+        x_offset = (64 - qr_size)
+        y_offset = (32 - qr_size) // 2
+        for y, row in enumerate(qr_matrix):
+            for x, cell in enumerate(row):
+                if cell:
+                    self.canvas.SetPixel(
+                        x + x_offset, y + y_offset, 255, 255, 255
+                    )
+        self.canvas = self.matrix.SwapOnVSync(self.canvas)
+
+    def run(self):
+        logging.info("Starting Subway Clock...")
+        weather_text = ''
+        while True:
+            self.config.load()
+            if self.captive_portal_running():
+                self.display_wifi_qr()
+                time.sleep(10)
+                continue
+
+            try:
+                trains = self.fetch_trains()
+            except Exception as e:
+                logging.error(f"failed to fetch trains: {e}")
+                trains = []
+
+            try:
+                weather_text = self.fetch_weather()
+            except Exception as e:
+                logging.error(f"failed to fetch weather: {e}")
+
+            if not trains and not weather_text:
+                time.sleep(10)
+                continue
+
+            self.update_brightness()
+            self.canvas.Clear()
+            now = int(time.time())
+            y_pos = 7
+            for train in trains[:3]:
+                self.draw_route_bullet(0, y_pos, train['route'])
+                minutes = max(0, int((train['time'] - now) / 60))
+                text = "Now" if minutes == 0 else f"{minutes} min"
+                color = graphics.Color(200, 200, 200)
+                graphics.DrawText(
+                    self.canvas, self.font, 11, y_pos, color, text
+                )
+                y_pos += 8
+
+            weather_color = graphics.Color(255, 215, 0)
+            graphics.DrawText(
+                self.canvas, self.font, 2, 31, weather_color, weather_text
+            )
+            self.draw_time()
+            self.canvas = self.matrix.SwapOnVSync(self.canvas)
+            time.sleep(30)
 
 
 def acquire_lock():
@@ -100,441 +421,26 @@ def acquire_lock():
         lock_file = open(LOCK_FILE, 'w')
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return lock_file
-
     except BlockingIOError:
-        logging.critical(
-                "Another instance of live_clock.py is already running. "
-                "Exiting.")
+        logging.critical("Already running. Exiting.")
         sys.exit(1)
-
     except PermissionError:
-        # This catches ownership security block
-        logging.critical(
-                f"Permission denied to access {LOCK_FILE}. "
-                "Try deleting the file manually.")
+        logging.critical(f"Permission denied to access {LOCK_FILE}.")
         sys.exit(1)
-
-
-def clear_matrix_and_exit(signum, frame):
-    logging.info("Stopping service and clearing matrix...")
-    if matrix:
-        matrix.Clear()  # This physically turns off all LEDs
-    sys.exit(0)
-
-
-def setup_matrix():
-    global matrix, canvas, font, train_font, time_font, small_font
-    # --- Matrix Setup ---
-    options = RGBMatrixOptions()
-    options.rows = 32
-    options.cols = 64
-    options.hardware_mapping = 'adafruit-hat'
-    options.drop_privileges = False  # Required for Bookworm permissions
-    matrix = RGBMatrix(options=options)
-    canvas = matrix.CreateFrameCanvas()
-
-    # Load fonts relative to script directory
-    font_path = os.path.join(FONTS_DIR, "5x8.bdf")
-    if not os.path.exists(font_path):
-        logging.critical(f"Error: Font not found at {font_path}")
-        sys.exit(1)
-
-    font = graphics.Font()
-    font.LoadFont(font_path)
-
-    train_font_path = os.path.join(FONTS_DIR, "5x8.bdf")
-    if not os.path.exists(train_font_path):
-        logging.critical(f"Error: Font not found at {train_font_path}")
-        sys.exit(1)
-
-    train_font = graphics.Font()
-    train_font.LoadFont(train_font_path)
-
-    time_font_path = os.path.join(FONTS_DIR, "4x6.bdf")
-    if not os.path.exists(time_font_path):
-        logging.critical(f"Error: Font not found at {time_font_path}")
-        sys.exit(1)
-
-    time_font = graphics.Font()
-    time_font.LoadFont(time_font_path)
-    small_font = time_font
-
-    graphics.DrawText(
-            canvas, font, 4, 16, graphics.Color(200, 200, 0), 'starting...'
-    )
-    canvas = matrix.SwapOnVSync(canvas)
-
-
-# --- Base Colors (Tuned for LED Matrices) ---
-mta_blue = graphics.Color(0, 50, 255)
-mta_orange = graphics.Color(255, 100, 0)
-mta_light_green = graphics.Color(100, 255, 50)
-mta_brown = graphics.Color(150, 100, 50)
-mta_light_gray = graphics.Color(100, 100, 100)
-mta_yellow = graphics.Color(125, 80, 0)
-mta_red = graphics.Color(255, 0, 0)
-mta_dark_green = graphics.Color(0, 200, 50)
-mta_purple = graphics.Color(200, 0, 200)
-mta_dark_gray = graphics.Color(75, 75, 75)
-mta_default = graphics.Color(50, 50, 50)
-
-# --- MTA Route Map ---
-colors = {
-    'A': mta_blue, 'C': mta_blue, 'E': mta_blue,
-    'B': mta_orange, 'D': mta_orange, 'F': mta_orange, 'M': mta_orange,
-    'G': mta_light_green,
-    'J': mta_brown, 'Z': mta_brown,
-    'L': mta_light_gray,
-    'N': mta_yellow, 'Q': mta_yellow, 'R': mta_yellow, 'W': mta_yellow,
-    '1': mta_red, '2': mta_red, '3': mta_red,
-    '4': mta_dark_green, '5': mta_dark_green, '6': mta_dark_green,
-    '7': mta_purple,
-    'S': mta_dark_gray,
-}
-
-# Darker fallback gray so white text is readable if a route goes rogue
-default_color = mta_default
-
-
-def get_portal_ssid():
-    """Reads the SSID from the system JSON configuration file."""
-    try:
-        return config.get('portal_ssid', 'SubwayClock')
-    except Exception as e:
-        logging.error(f"Error reading JSON config: {e}")
-
-    return "SubwayClock"  # Fallback
-
-
-class NoWeatherException(Exception):
-    ...
-
-
-def time_text():
-    return time.strftime("%-I:%M").rjust(5)
-
-
-def draw_time(canvas):
-    time_color = graphics.Color(255, 215, 0)
-    x_pos = 45
-    y_pos = 5
-    graphics.DrawText(canvas, time_font, x_pos, y_pos, time_color, time_text())
-
-
-def draw_route_bullet(canvas, font, x, y, route, bg_color):
-    center_x = x + 3
-    center_y = y - 3
-
-    # Hardcode the pixel widths for each row to create a perfect 7x7 circle.
-    # A width of '1' draws 3 pixels (center - 1 to center + 1).
-    # A width of '3' draws 7 pixels (center - 3 to center + 3).
-    row_widths = [1, 2, 3, 3, 3, 3, 2, 1]
-
-    for i, width in enumerate(row_widths):
-        y_offset = i - 4  # Maps the 0-6 index to the -3 to +3 vertical offset
-        graphics.DrawLine(canvas,
-                          center_x - width,
-                          center_y + y_offset,
-                          center_x + width + 1,
-                          center_y + y_offset,
-                          bg_color)
-
-    # Draw the white letter
-    white = graphics.Color(255, 255, 255)
-    graphics.DrawText(canvas, train_font, x + 2, y, white, route)
-
-
-def fetch_weather(zip_code):
-    weather_endpoint = "https://api.open-meteo.com/v1/forecast"
-    try:
-        lat, lon = get_lat_lon_from_zip(zip_code)
-        weather_query_params = {
-            "latitude": lat,
-            "longitude": lon,
-            "current_weather": "true",
-            "temperature_unit": "fahrenheit"
-        }
-        # Pings Open-Meteo for local Beacon, NY forecast
-        response = requests.get(weather_endpoint,
-                                params=weather_query_params,
-                                timeout=5)
-        response.raise_for_status()
-        data = response.json().get('current_weather')
-        if not data:
-            raise NoWeatherException("No current weather data in response")
-
-        temp = int(data['temperature'])
-        code = data['weathercode']
-
-        # Map WMO weather codes to simple text that fits on the screen
-        if code == 0:
-            cond = "Clear"
-        elif code in [1, 2, 3]:
-            cond = "Cloudy"
-        elif code in [45, 48]:
-            cond = "Fog"
-        elif code in [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82]:
-            cond = "Rain"
-        elif code in [71, 73, 75, 77, 85, 86]:
-            cond = "Snow"
-        elif code in [95, 96, 99]:
-            cond = "Storm"
-        else:
-            cond = ""
-
-        return f"{temp}° {cond}"
-    except Exception as e:
-        logging.error(f"Weather fetch error: {e}")
-        raise NoWeatherException from e
-
-
-def fetch_trains(stop_ids, active_routes):
-    arrivals = []
-
-    for url in FEED_URLS:
-        try:
-            response = requests.get(url, timeout=5)
-            if response.status_code != 200:
-                logging.warning(
-                        f"Feed {url} returned status {response.status_code}")
-                continue
-
-            feed = gtfs_realtime_pb2.FeedMessage()
-            feed.ParseFromString(response.content)
-
-            for entity in feed.entity:
-                if not entity.HasField('trip_update'):
-                    continue
-                route_id = entity.trip_update.trip.route_id
-
-                # We only care about active routes
-                if '*' not in active_routes and route_id not in active_routes:
-                    continue
-
-                for stop_time in entity.trip_update.stop_time_update:
-                    if stop_time.stop_id not in stop_ids:
-                        continue
-                    if (not stop_time.HasField('arrival')
-                            or not stop_time.arrival.HasField('time')):
-                        continue
-
-                    arrival_time = stop_time.arrival.time
-                    if arrival_time - int(time.time()) > 60:
-                        arrivals.append({
-                            'route': route_id,
-                            'time': arrival_time
-                        })
-        except Exception as e:
-            logging.error(f"Error fetching feed {url}: {e}")
-            continue
-
-    # Sort by arrival time (soonest first)
-    arrivals.sort(key=lambda x: x['time'])
-    return arrivals
-
-
-logging.info("Starting Subway Clock... Press Ctrl+C to exit.")
-
-
-def is_night_mode(night_start, night_end):
-    now = datetime.now().time()
-
-    start_time = datetime.strptime(night_start, "%H:%M").time()
-    end_time = datetime.strptime(night_end, "%H:%M").time()
-
-    # Check if current time falls in the window (handling midnight rollover)
-    if start_time < end_time:
-        return start_time <= now <= end_time
-    else:
-        # The window crosses midnight (e.g., 20:00 to 08:00)
-        return now >= start_time or now <= end_time
-
-
-def update_brightness(matrix, current_brightness, day_b,
-                      night_b, night_start, night_end):
-    if is_night_mode(night_start, night_end):
-        target_brightness = night_b
-    else:
-        target_brightness = day_b
-
-    if current_brightness != target_brightness:
-        matrix.brightness = current_brightness = target_brightness
-
-    return current_brightness
-
-
-def captive_portal_running():
-    """Returns True if the wifi-connect service is actively running."""
-    try:
-        # Ask systemd if the service is active
-        result = subprocess.run(
-            ['systemctl', 'is-active', 'wifi-connect.service'],
-            stdout=subprocess.PIPE,
-            text=True
-        )
-        # If it's running, systemd returns the word 'active'
-        return result.stdout.strip() == 'active'
-    except Exception:
-        return False
-
-
-def display_wifi_qr(matrix, canvas):
-    ssid = get_portal_ssid()
-    wifi_string = f"WIFI:S:{ssid};T:nopass;;"
-
-    qr = qrcode.QRCode(
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=1,
-        border=1,
-    )
-    qr.add_data(wifi_string)
-    qr.make(fit=True)
-
-    qr_matrix = qr.get_matrix()
-    qr_size = len(qr_matrix)
-
-    canvas.Clear()
-
-    graphics.DrawText(
-            canvas, small_font, 0, 10, graphics.Color(200, 200, 0), 'scan to'
-    )
-    graphics.DrawText(
-            canvas, small_font, 0, 18, graphics.Color(200, 200, 0), 'connect'
-    )
-
-    x_offset = (64 - qr_size)
-    y_offset = (32 - qr_size) // 2
-
-    for y, row in enumerate(qr_matrix):
-        for x, cell in enumerate(row):
-            if cell:
-                canvas.SetPixel(x + x_offset, y + y_offset, 255, 255, 255)
-
-    return matrix.SwapOnVSync(canvas)
-
-
-def route_name(route_id):
-    route_id_translation = {
-        "GS": "S",
-        "FS": "S",
-        "H":  "S",
-        "SI": "S",
-        "SIR": "S",
-    }
-    return route_id_translation.get(route_id, route_id)
-
-
-LAT = None
-LON = None
-WEATHER_ZIP = None
-
-
-def get_lat_lon_from_zip(zip_code):
-    """Translates a US Zip Code to Latitude and Longitude using a free API."""
-    global LAT, LON, WEATHER_ZIP
-    if WEATHER_ZIP == zip_code and LAT is not None and LON is not None:
-        return LAT, LON
-
-    WEATHER_ZIP = zip_code
-    url = f"http://api.zippopotam.us/us/{zip_code}"
-
-    try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-
-        LAT = float(data['places'][0]['latitude'])
-        LON = float(data['places'][0]['longitude'])
-
-        return LAT, LON
-
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to translate Zip Code {zip_code}: {e}")
-        return 41.50, -73.97
-
-
-def run_clock():
-    global canvas
-    logging.info("Starting Subway Clock... Press Ctrl+C to exit.")
-    weather_text = ''
-    new_weather_text = ''
-    trains = []
-    new_trains = []
-    current_brightness = None
-    while True:
-        config.load()
-
-        if captive_portal_running():
-            logging.info("Detected captive portal running, updating display")
-            canvas = display_wifi_qr(matrix, canvas)
-            time.sleep(10)
-            continue
-        try:
-            new_trains = []
-            new_trains = fetch_trains(
-                    config.get('stop_ids'), config.get('routes'))
-            trains = new_trains
-        except Exception as e:
-            logging.error(f"failed to fetch train info: {e}")
-        try:
-            new_weather_text = ''
-            new_weather_text = fetch_weather(config.get('weather_zip'))
-            weather_text = new_weather_text
-        except Exception as e:
-            logging.error(f"failed to fetch weather info {e}")
-
-        if not trains and not new_weather_text:
-            time.sleep(10)
-            continue
-
-        current_brightness = update_brightness(
-            matrix,
-            current_brightness,
-            config.get('day_brightness'),
-            config.get('night_brightness'),
-            config.get('night_start_time'),
-            config.get('night_end_time')
-        )
-        canvas.Clear()
-
-        y_pos = 7
-        now = int(time.time())
-
-        # 1. Display the next 3 trains
-        for train in trains[:3]:
-            route_id = train['route']
-            route = route_name(route_id)
-            minutes = max(0, int((train['time'] - now) / 60))
-
-            bg_color = colors.get(route, default_color)
-            draw_route_bullet(canvas, font, 0, y_pos, route, bg_color)
-
-            if minutes == 0:
-                text = "Now"
-            else:
-                text = f"{minutes} min"
-
-            text_color = graphics.Color(200, 200, 200)
-            graphics.DrawText(canvas, font, 11, y_pos, text_color, text)
-
-            # Move down exactly 8 pixels for the next row
-            y_pos += 8
-
-        weather_color = graphics.Color(255, 215, 0)
-        graphics.DrawText(
-                canvas, font, 2, 31, weather_color, weather_text)
-
-        draw_time(canvas)
-        canvas = matrix.SwapOnVSync(canvas)
-
-        # Wait 30 seconds before polling the APIs again
-        time.sleep(30)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     _LOCK = acquire_lock()
-    # Listen for systemd stop (SIGTERM) and Ctrl+C (SIGINT)
-    signal.signal(signal.SIGTERM, clear_matrix_and_exit)
-    signal.signal(signal.SIGINT, clear_matrix_and_exit)
-    setup_matrix()
-    run_clock()
+    clock = SubwayClock()
+
+    def handle_exit(signum, frame):
+        logging.info("Stopping...")
+        clock.clear()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_exit)
+    signal.signal(signal.SIGINT, handle_exit)
+
+    clock.setup_matrix()
+    clock.run()
