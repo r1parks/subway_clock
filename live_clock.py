@@ -357,7 +357,6 @@ def captive_portal_running():
         # If it's running, systemd returns the word 'active'
         return result.stdout.strip() == 'active'
     except Exception as e:
-        logging.exception(e)
         return False
 
 
@@ -458,15 +457,13 @@ def run_clock():
                     config.get('stop_ids'), config.get('routes'))
             trains = new_trains
         except Exception as e:
-            logging.error("failed to fetch train info")
-            logging.exception(e)
+            logging.error(f"failed to fetch train info: {e}")
         try:
             new_weather_text = ''
             new_weather_text = fetch_weather(config.get('weather_zip'))
             weather_text = new_weather_text
         except Exception as e:
-            logging.error("failed to fetch weather info")
-            logging.exception(e)
+            logging.error(f"failed to fetch weather info {e}")
 
         if not trains and not new_weather_text:
             time.sleep(10)

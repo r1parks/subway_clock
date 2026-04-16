@@ -2,6 +2,7 @@
 
 import logging
 import os
+import subprocess
 import flask
 from config_manager import Config
 
@@ -63,6 +64,26 @@ def index():
         all_stops = {}
 
     return flask.render_template('index.html', config=config, all_stops=all_stops)
+
+
+@app.route('/debug')
+def debug():
+    services = ['subway-clock.service', 'subway-web.service', 'wifi-connect.service']
+    logs = {}
+    for service in services:
+        try:
+            # -n 200 for last 200 lines, --no-pager to avoid hanging
+            result = subprocess.run(
+                ['journalctl', '-u', service, '-n', '200', '--no-pager'],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            logs[service] = result.stdout if result.stdout else f"No logs found for {service}"
+        except Exception as e:
+            logs[service] = f"Error retrieving logs for {service}: {e}"
+
+    return flask.render_template('debug.html', logs=logs)
 
 
 if __name__ == '__main__':
