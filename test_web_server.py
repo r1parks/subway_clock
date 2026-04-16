@@ -76,5 +76,27 @@ class TestWebServer(unittest.TestCase):
         web_server.index()
         self.assertTrue(web_server.config_obj.update_bulk_called)
 
+    def test_debug(self):
+        import subprocess
+        # Mock subprocess.run
+        original_run = subprocess.run
+        class MockResult:
+            def __init__(self, stdout):
+                self.stdout = stdout
+        def mock_run(*args, **kwargs):
+            return MockResult("mock logs")
+        subprocess.run = mock_run
+        
+        try:
+            mock_flask.render_template_called = False
+            web_server.debug()
+            self.assertTrue(mock_flask.render_template_called)
+            # Check if logs were passed
+            args, kwargs = mock_flask.render_template_args
+            self.assertIn('logs', kwargs)
+            self.assertEqual(kwargs['logs']['subway-clock.service'], "mock logs")
+        finally:
+            subprocess.run = original_run
+
 if __name__ == '__main__':
     unittest.main()
