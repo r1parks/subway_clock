@@ -129,7 +129,7 @@ class TestLiveClock(unittest.TestCase):
             self.assertEqual(self.clock.matrix.brightness, 100)
 
     @patch('live_clock.requests.get')
-    def test_fetch_weather_success(self, mock_get):
+    def test_fetch_weather_task_success(self, mock_get):
         # Mock successful API response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -146,11 +146,11 @@ class TestLiveClock(unittest.TestCase):
         # Mock get_lat_lon to avoid another network call
         with patch.object(live_clock.SubwayClock, 'get_lat_lon',
                           return_value=(40.71, -74.00)):
-            result = self.clock.fetch_weather()
-            self.assertEqual(result, "72° Clear")
+            self.clock.fetch_weather_task()
+            self.assertEqual(self.clock.weather_text, "72° Clear")
 
     @patch('live_clock.requests.get')
-    def test_fetch_trains_mock(self, mock_get):
+    def test_fetch_trains_task_mock(self, mock_get):
         # Mock a minimal GTFS response for the first call, empty for others
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -183,9 +183,9 @@ class TestLiveClock(unittest.TestCase):
             entity.trip_update.stop_time_update = [stop_time]
             mock_feed.entity = [entity]
 
-            arrivals = self.clock.fetch_trains()
-            self.assertEqual(len(arrivals), 1)
-            self.assertEqual(arrivals[0]['route'], 'A')
+            self.clock.fetch_trains_task()
+            self.assertEqual(len(self.clock.trains), 1)
+            self.assertEqual(self.clock.trains[0]['route'], 'A')
 
 
 if __name__ == '__main__':
