@@ -4,6 +4,7 @@ import logging
 
 DEFAULT_CONFIG_FILE = '/etc/subway-clock.json'
 
+
 class Config:
     def __init__(self, config_file=None):
         self.config_file = config_file or DEFAULT_CONFIG_FILE
@@ -21,18 +22,19 @@ class Config:
         self.load()
 
     def load(self):
-        """Loads configuration from the file, applying defaults for missing values."""
+        """Loads configuration from the file."""
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as f:
                     user_config = json.load(f)
                     self.config.update(user_config)
             else:
-                logging.warning(f"Config file {self.config_file} not found. Using defaults.")
+                logging.warning(
+                    f"Config file {self.config_file} not found. "
+                    "Using defaults."
+                )
         except Exception as e:
             logging.error(f"Error reading JSON config: {e}")
-        except Exception as e:
-            logging.error(f"An unexpected error occurred while loading config: {e}")
 
     def save(self):
         """Saves the current configuration to the file."""
@@ -42,12 +44,16 @@ class Config:
         except IOError as e:
             logging.error(f"Error writing config file: {e}")
         except Exception as e:
-            logging.error(f"An unexpected error occurred while writing config: {e}")
-            logging.error(f"Error writing config file: {e}")
+            logging.error(
+                f"An unexpected error occurred while writing config: {e}"
+            )
 
     def get(self, field, default=None):
-        """Retrieves a configuration value, returning the default if not found."""
-        return self.config.get(field, default if default is not None else self.defaults.get(field))
+        """Retrieves a configuration value."""
+        return self.config.get(
+            field,
+            default if default is not None else self.defaults.get(field)
+        )
 
     def set(self, field, value):
         """Sets a configuration value and persists it to the file."""

@@ -15,7 +15,9 @@ CSV_PARAMS = {
 }
 
 # Use absolute path for consistency
-STOPS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stops.json')
+STOPS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'stops.json'
+)
 
 stops = {}
 
@@ -23,9 +25,12 @@ logging.basicConfig(level=logging.INFO)
 logging.info("Downloading MTA station data from NY State Open Data...")
 
 try:
-    response = requests.get(CSV_URL, params=CSV_PARAMS, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30)
+    response = requests.get(
+        CSV_URL, params=CSV_PARAMS, headers={'User-Agent': 'Mozilla/5.0'},
+        timeout=30
+    )
     response.raise_for_status()
-    
+
     lines = response.text.splitlines()
     reader = csv.DictReader(lines)
 
@@ -49,7 +54,8 @@ try:
         json.dump(sorted_stops, jsonfile, indent=2)
 
     logging.info(
-        f"Success! Generated {STOPS_FILE} mapping {len(sorted_stops)} platforms."
+        f"Success! Generated {STOPS_FILE} "
+        f"mapping {len(sorted_stops)} platforms."
     )
 except Exception as e:
     logging.error(f"Failed to generate stops.json: {e}")

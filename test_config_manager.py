@@ -4,11 +4,12 @@ import json
 import tempfile
 from config_manager import Config
 
+
 class TestConfigManager(unittest.TestCase):
     def setUp(self):
         # Create a temporary file for testing
         self.test_fd, self.test_path = tempfile.mkstemp()
-        
+
     def tearDown(self):
         # Clean up the temporary file
         os.close(self.test_fd)
@@ -25,7 +26,7 @@ class TestConfigManager(unittest.TestCase):
         test_data = {"portal_ssid": "TestSSID", "day_brightness": 50}
         with open(self.test_path, 'w') as f:
             json.dump(test_data, f)
-            
+
         config = Config(config_file=self.test_path)
         self.assertEqual(config.get("portal_ssid"), "TestSSID")
         self.assertEqual(config.get("day_brightness"), 50)
@@ -35,7 +36,7 @@ class TestConfigManager(unittest.TestCase):
     def test_set_and_save(self):
         config = Config(config_file=self.test_path)
         config.set("weather_zip", 90210)
-        
+
         # Verify it saved to disk
         with open(self.test_path, 'r') as f:
             saved_data = json.load(f)
@@ -45,7 +46,7 @@ class TestConfigManager(unittest.TestCase):
         config = Config(config_file=self.test_path)
         new_data = {"routes": ["Q", "N"], "night_brightness": 5}
         config.update_bulk(new_data)
-        
+
         self.assertEqual(config.get("routes"), ["Q", "N"])
         self.assertEqual(config.get("night_brightness"), 5)
 
@@ -54,6 +55,7 @@ class TestConfigManager(unittest.TestCase):
         config_dict = config.to_dict()
         self.assertIsInstance(config_dict, dict)
         self.assertEqual(config_dict["portal_ssid"], "SubwayClock")
+
 
 if __name__ == '__main__':
     unittest.main()
