@@ -64,6 +64,42 @@ class TestLiveClock(unittest.TestCase):
         self.assertEqual(self.clock.route_name("A"), "A")
         self.assertEqual(self.clock.route_name("SIR"), "S")
 
+    def test_map_weather_code(self):
+        self.assertEqual(self.clock.map_weather_code(0), "Clear")
+        self.assertEqual(self.clock.map_weather_code(1), "Cloudy")
+        self.assertEqual(self.clock.map_weather_code(45), "Fog")
+        self.assertEqual(self.clock.map_weather_code(51), "Rain")
+        self.assertEqual(self.clock.map_weather_code(71), "Snow")
+        self.assertEqual(self.clock.map_weather_code(95), "Storm")
+        self.assertEqual(self.clock.map_weather_code(999), "")
+
+    @patch('live_clock.requests.get')
+    def test_get_lat_lon_success(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'places': [{'latitude': '40.71', 'longitude': '-74.00'}]
+        }
+        mock_get.return_value = mock_response
+
+        lat, lon = self.clock.get_lat_lon(10001)
+        self.assertEqual(lat, 40.71)
+        self.assertEqual(lon, -74.00)
+        # Check cache
+        self.assertEqual(self.clock.weather_zip, 10001)
+
+        # Second call should use cache (mock_get.call_count should still be 1)
+        lat, lon = self.clock.get_lat_lon(10001)
+        self.assertEqual(mock_get.call_count, 1)
+
+    @patch('live_clock.requests.get')
+    def test_get_lat_lon_failure(self, mock_get):
+        mock_get.side_effect = Exception("API Down")
+        lat, lon = self.clock.get_lat_lon(10001)
+        # Fallback values
+        self.assertEqual(lat, 41.50)
+        self.assertEqual(lon, -73.97)
+
     def test_update_brightness(self):
         self.clock.matrix = MagicMock()
         self.clock.matrix.brightness = 100

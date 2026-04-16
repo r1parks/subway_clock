@@ -19,43 +19,50 @@ STOPS_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'stops.json'
 )
 
-stops = {}
 
-logging.basicConfig(level=logging.INFO)
-logging.info("Downloading MTA station data from NY State Open Data...")
+def download_stops():
+    stops = {}
+    logging.info("Downloading MTA station data from NY State Open Data...")
 
-try:
-    response = requests.get(
-        CSV_URL, params=CSV_PARAMS, headers={'User-Agent': 'Mozilla/5.0'},
-        timeout=30
-    )
-    response.raise_for_status()
+    try:
+        response = requests.get(
+            CSV_URL, params=CSV_PARAMS, headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=30
+        )
+        response.raise_for_status()
 
-    lines = response.text.splitlines()
-    reader = csv.DictReader(lines)
+        lines = response.text.splitlines()
+        reader = csv.DictReader(lines)
 
-    for row in reader:
-        base_id = row.get('GTFS Stop ID', '').strip()
-        if not base_id:
-            continue
+        for row in reader:
+            base_id = row.get('GTFS Stop ID', '').strip()
+            if not base_id:
+                continue
 
-        stop_name = row.get('Stop Name', '').strip()
-        routes = row.get('Daytime Routes', '').strip()
+            stop_name = row.get('Stop Name', '').strip()
+            routes = row.get('Daytime Routes', '').strip()
 
-        display_name = f"{stop_name} [{routes}]" if routes else stop_name
+            display_name = f"{stop_name} [{routes}]" if routes else stop_name
 
-        stops[f"{base_id}N"] = f"{display_name} (Uptown / Northbound)"
-        stops[f"{base_id}S"] = f"{display_name} (Downtown / Southbound)"
+            stops[f"{base_id}N"] = f"{display_name} (Uptown / Northbound)"
+            stops[f"{base_id}S"] = f"{display_name} (Downtown / Southbound)"
 
-    # Sort alphabetically so the dropdown is easy to navigate
-    sorted_stops = dict(sorted(stops.items(), key=lambda item: item[1]))
+        # Sort alphabetically so the dropdown is easy to navigate
+        sorted_stops = dict(sorted(stops.items(), key=lambda item: item[1]))
 
-    with open(STOPS_FILE, 'w') as jsonfile:
-        json.dump(sorted_stops, jsonfile, indent=2)
+        with open(STOPS_FILE, 'w') as jsonfile:
+            json.dump(sorted_stops, jsonfile, indent=2)
 
-    logging.info(
-        f"Success! Generated {STOPS_FILE} "
-        f"mapping {len(sorted_stops)} platforms."
-    )
-except Exception as e:
-    logging.error(f"Failed to generate stops.json: {e}")
+        logging.info(
+            f"Success! Generated {STOPS_FILE} "
+            f"mapping {len(sorted_stops)} platforms."
+        )
+        return True
+    except Exception as e:
+        logging.error(f"Failed to generate stops.json: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    download_stops()

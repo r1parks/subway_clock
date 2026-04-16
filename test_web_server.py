@@ -67,6 +67,21 @@ class MockConfig:
 class TestWebServer(unittest.TestCase):
     def test_parse_int(self):
         self.assertEqual(web_server.parse_int("10", 0), 10)
+        self.assertEqual(web_server.parse_int("abc", 5), 5)
+        self.assertEqual(web_server.parse_int(None, 7), 7)
+        self.assertEqual(web_server.parse_int("5", 0, min_val=10), 10)
+        self.assertEqual(web_server.parse_int("15", 0, max_val=10), 10)
+
+    def test_get_all_stops_failure(self):
+        # Mock STOPS_FILE to point to a non-existent file
+        original_stops_file = web_server.STOPS_FILE
+        web_server.STOPS_FILE = "non_existent_stops.json"
+        web_server._stops_cache = None  # Clear cache
+        try:
+            stops = web_server.get_all_stops()
+            self.assertEqual(stops, {})
+        finally:
+            web_server.STOPS_FILE = original_stops_file
 
     def test_index_get(self):
         web_server.config_obj = MockConfig()
