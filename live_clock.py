@@ -107,7 +107,7 @@ class SubwayClock:
 
         # Load fonts
         self.font = self.load_font("5x8.bdf")
-        self.train_font = self.load_font("5x8.bdf")
+        self.train_font = self.font
         self.time_font = self.load_font("4x6.bdf")
         self.small_font = self.time_font
 
