@@ -10,6 +10,7 @@ import signal
 import subprocess
 import qrcode
 import schedule
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 try:
@@ -99,6 +100,7 @@ class SubwayClock:
         # State data
         self.trains = []
         self.weather_text = ""
+        self.executor = ThreadPoolExecutor(max_workers=2)
 
     def setup_matrix(self):
         # --- Matrix Setup ---
@@ -181,7 +183,7 @@ class SubwayClock:
             logging.error(f"Failed to translate Zip Code {zip_code}: {e}")
             return 41.50, -73.97
 
-    def fetch_weather_task(self):
+    def _fetch_weather_impl(self):
         zip_code = self.config.get('weather_zip')
         endpoint = "https://api.open-meteo.com/v1/forecast"
         try:
@@ -206,6 +208,9 @@ class SubwayClock:
             logging.error(f"Weather fetch error: {e}")
             # We don't clear weather_text on error to keep showing old data
 
+    def fetch_weather_task(self):
+        self.executor.submit(self._fetch_weather_impl)
+
     def map_weather_code(self, code):
         if code == 0:
             return "Clear"
@@ -221,7 +226,7 @@ class SubwayClock:
             return "Storm"
         return ""
 
-    def fetch_trains_task(self):
+    def _fetch_trains_impl(self):
         stop_ids = self.config.get('stop_ids')
         active_routes = self.config.get('routes')
         new_arrivals = []
@@ -258,6 +263,9 @@ class SubwayClock:
                 logging.error(f"Error fetching feed {url}: {e}")
         new_arrivals.sort(key=lambda x: x['time'])
         self.trains = new_arrivals
+
+    def fetch_trains_task(self):
+        self.executor.submit(self._fetch_trains_impl)
 
     def check_config_task(self):
         if self.config.is_modified():
@@ -365,6 +373,11 @@ class SubwayClock:
     def run(self):
         logging.info("Starting Subway Clock (Scheduled Mode)...")
 
+        # High-priority check for captive portal on startup
+        while self.captive_portal_running():
+            self.display_wifi_qr()
+            time.sleep(5)
+
         # Initial data fetch
         self.fetch_trains_task()
         self.fetch_weather_task()
@@ -375,12 +388,6 @@ class SubwayClock:
         schedule.every(5).seconds.do(self.check_config_task)
 
         while True:
-            # High-priority check for captive portal
-            if self.captive_portal_running():
-                self.display_wifi_qr()
-                time.sleep(5)
-                continue
-
             schedule.run_pending()
             self.render()
             time.sleep(1)
