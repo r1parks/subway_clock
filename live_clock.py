@@ -268,7 +268,8 @@ class SubwayClock:
         self.trains = new_arrivals
 
     def fetch_trains_task(self):
-        self.executor.submit(self._fetch_trains_impl)
+        if self._train_future is None or self._train_future.done():
+            self._train_future = self.executor.submit(self._fetch_trains_impl)
 
     def check_config_task(self):
         if self.config.is_modified():
