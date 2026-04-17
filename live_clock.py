@@ -101,6 +101,8 @@ class SubwayClock:
         self.trains = []
         self.weather_text = ""
         self.executor = ThreadPoolExecutor(max_workers=2)
+        self._weather_future = None
+        self._train_future = None
 
     def setup_matrix(self):
         # --- Matrix Setup ---
