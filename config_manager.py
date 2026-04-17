@@ -42,7 +42,10 @@ class Config:
         """Checks if the config file has been modified on disk."""
         if not os.path.exists(self.config_file):
             return False
-        return os.path.getmtime(self.config_file) > self._last_mtime
+        try:
+            return os.path.getmtime(self.config_file) > self._last_mtime
+        except OSError:
+            return False
 
     def save(self):
         """Saves the current configuration to the file."""
