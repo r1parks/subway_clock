@@ -211,7 +211,8 @@ class SubwayClock:
             # We don't clear weather_text on error to keep showing old data
 
     def fetch_weather_task(self):
-        self.executor.submit(self._fetch_weather_impl)
+        if self._weather_future is None or self._weather_future.done():
+            self._weather_future = self.executor.submit(self._fetch_weather_impl)
 
     def map_weather_code(self, code):
         if code == 0:
