@@ -386,6 +386,14 @@ class SubwayClock:
         self.fetch_trains_task()
         self.fetch_weather_task()
 
+        # Wait for the initial train fetch to finish so we don't clear the
+        # "starting..." screen prematurely.
+        if self._train_future:
+            try:
+                self._train_future.result()
+            except Exception as e:
+                logging.error(f"Initial train fetch failed: {e}")
+
         # Set up schedules
         schedule.every(20).seconds.do(self.fetch_trains_task)
         schedule.every(5).minutes.do(self.fetch_weather_task)
