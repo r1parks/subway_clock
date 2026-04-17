@@ -9,6 +9,7 @@ import requests
 import signal
 import subprocess
 import qrcode
+import schedule
 from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 try:
@@ -95,6 +96,10 @@ class SubwayClock:
         self.lon = None
         self.weather_zip = None
 
+        # State data
+        self.trains = []
+        self.weather_text = ""
+
     def setup_matrix(self):
         # --- Matrix Setup ---
         options = RGBMatrixOptions()
@@ -176,7 +181,7 @@ class SubwayClock:
             logging.error(f"Failed to translate Zip Code {zip_code}: {e}")
             return 41.50, -73.97
 
-    def fetch_weather(self):
+    def fetch_weather_task(self):
         zip_code = self.config.get('weather_zip')
         endpoint = "https://api.open-meteo.com/v1/forecast"
         try:
@@ -196,10 +201,10 @@ class SubwayClock:
             temp = int(data['temperature'])
             code = data['weathercode']
             cond = self.map_weather_code(code)
-            return f"{temp}° {cond}"
+            self.weather_text = f"{temp}° {cond}"
         except Exception as e:
             logging.error(f"Weather fetch error: {e}")
-            raise NoWeatherException from e
+            # We don't clear weather_text on error to keep showing old data
 
     def map_weather_code(self, code):
         if code == 0:
@@ -216,10 +221,10 @@ class SubwayClock:
             return "Storm"
         return ""
 
-    def fetch_trains(self):
+    def fetch_trains_task(self):
         stop_ids = self.config.get('stop_ids')
         active_routes = self.config.get('routes')
-        arrivals = []
+        new_arrivals = []
         now = int(time.time())
 
         for url in self.FEED_URLS:
@@ -245,14 +250,22 @@ class SubwayClock:
                             continue
                         arrival_time = stop_time.arrival.time
                         if arrival_time - now > 60:
-                            arrivals.append({
+                            new_arrivals.append({
                                 'route': route_id,
                                 'time': arrival_time
                             })
             except Exception as e:
                 logging.error(f"Error fetching feed {url}: {e}")
-        arrivals.sort(key=lambda x: x['time'])
-        return arrivals
+        new_arrivals.sort(key=lambda x: x['time'])
+        self.trains = new_arrivals
+
+    def check_config_task(self):
+        if self.config.is_modified():
+            logging.info("Config file changed, reloading...")
+            self.config.load()
+            # If config changed, trigger immediate data refresh
+            self.fetch_trains_task()
+            self.fetch_weather_task()
 
     def draw_route_bullet(self, x, y, route_id):
         route = self.route_name(route_id)
@@ -326,53 +339,51 @@ class SubwayClock:
                     )
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
 
+    def render(self):
+        self.update_brightness()
+        self.canvas.Clear()
+        now = int(time.time())
+        y_pos = 7
+        for train in self.trains[:3]:
+            self.draw_route_bullet(0, y_pos, train['route'])
+            minutes = max(0, int((train['time'] - now) / 60))
+            text = "Now" if minutes == 0 else f"{minutes} min"
+            color = graphics.Color(200, 200, 200)
+            graphics.DrawText(
+                self.canvas, self.font, 11, y_pos, color, text
+            )
+            y_pos += 8
+
+        weather_color = graphics.Color(255, 215, 0)
+        graphics.DrawText(
+            self.canvas, self.small_font, 2, 31,
+            weather_color, self.weather_text
+        )
+        self.draw_time()
+        self.canvas = self.matrix.SwapOnVSync(self.canvas)
+
     def run(self):
-        logging.info("Starting Subway Clock...")
-        weather_text = ''
+        logging.info("Starting Subway Clock (Scheduled Mode)...")
+
+        # Initial data fetch
+        self.fetch_trains_task()
+        self.fetch_weather_task()
+
+        # Set up schedules
+        schedule.every(20).seconds.do(self.fetch_trains_task)
+        schedule.every(5).minutes.do(self.fetch_weather_task)
+        schedule.every(5).seconds.do(self.check_config_task)
+
         while True:
-            self.config.load()
+            # High-priority check for captive portal
             if self.captive_portal_running():
                 self.display_wifi_qr()
-                time.sleep(10)
+                time.sleep(5)
                 continue
 
-            try:
-                trains = self.fetch_trains()
-            except Exception as e:
-                logging.error(f"failed to fetch trains: {e}")
-                trains = []
-
-            try:
-                weather_text = self.fetch_weather()
-            except Exception as e:
-                logging.error(f"failed to fetch weather: {e}")
-
-            if not trains and not weather_text:
-                time.sleep(10)
-                continue
-
-            self.update_brightness()
-            self.canvas.Clear()
-            now = int(time.time())
-            y_pos = 7
-            for train in trains[:3]:
-                self.draw_route_bullet(0, y_pos, train['route'])
-                minutes = max(0, int((train['time'] - now) / 60))
-                text = "Now" if minutes == 0 else f"{minutes} min"
-                color = graphics.Color(200, 200, 200)
-                graphics.DrawText(
-                    self.canvas, self.font, 11, y_pos, color, text
-                )
-                y_pos += 8
-
-            weather_color = graphics.Color(255, 215, 0)
-            graphics.DrawText(
-                self.canvas, self.small_font, 2, 31,
-                weather_color, weather_text
-            )
-            self.draw_time()
-            self.canvas = self.matrix.SwapOnVSync(self.canvas)
-            time.sleep(30)
+            schedule.run_pending()
+            self.render()
+            time.sleep(1)
 
 
 def acquire_lock():

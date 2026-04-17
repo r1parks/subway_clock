@@ -8,6 +8,7 @@ DEFAULT_CONFIG_FILE = '/etc/subway-clock.json'
 class Config:
     def __init__(self, config_file=None):
         self.config_file = config_file or DEFAULT_CONFIG_FILE
+        self._last_mtime = 0
         self.defaults = {
             "portal_ssid": "SubwayClock",
             "stop_ids": ["A19S"],
@@ -25,6 +26,7 @@ class Config:
         """Loads configuration from the file."""
         try:
             if os.path.exists(self.config_file):
+                self._last_mtime = os.path.getmtime(self.config_file)
                 with open(self.config_file, 'r') as f:
                     user_config = json.load(f)
                     self.config.update(user_config)
@@ -35,6 +37,15 @@ class Config:
                 )
         except Exception as e:
             logging.error(f"Error reading JSON config: {e}")
+
+    def is_modified(self):
+        """Checks if the config file has been modified on disk."""
+        if not os.path.exists(self.config_file):
+            return False
+        try:
+            return os.path.getmtime(self.config_file) > self._last_mtime
+        except OSError:
+            return False
 
     def save(self):
         """Saves the current configuration to the file."""
