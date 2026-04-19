@@ -65,13 +65,20 @@ class TestLiveClock(unittest.TestCase):
         self.assertEqual(self.clock.route_name("SIR"), "S")
 
     def test_map_weather_code(self):
-        self.assertEqual(self.clock.map_weather_code(0), "Clear")
-        self.assertEqual(self.clock.map_weather_code(1), "Cloudy")
-        self.assertEqual(self.clock.map_weather_code(45), "Fog")
-        self.assertEqual(self.clock.map_weather_code(51), "Rain")
-        self.assertEqual(self.clock.map_weather_code(71), "Snow")
-        self.assertEqual(self.clock.map_weather_code(95), "Storm")
-        self.assertEqual(self.clock.map_weather_code(999), "")
+        self.assertEqual(self.clock.map_weather_code(0),
+                         live_clock.WeatherCodes.CLEAR)
+        self.assertEqual(self.clock.map_weather_code(1),
+                         live_clock.WeatherCodes.CLOUDY)
+        self.assertEqual(self.clock.map_weather_code(45),
+                         live_clock.WeatherCodes.FOG)
+        self.assertEqual(self.clock.map_weather_code(51),
+                         live_clock.WeatherCodes.RAIN)
+        self.assertEqual(self.clock.map_weather_code(71),
+                         live_clock.WeatherCodes.SNOW)
+        self.assertEqual(self.clock.map_weather_code(95),
+                         live_clock.WeatherCodes.STORM)
+        self.assertEqual(self.clock.map_weather_code(999),
+                         live_clock.WeatherCodes.UNKNOWN)
 
     @patch('live_clock.requests.get')
     def test_get_lat_lon_success(self, mock_get):
@@ -136,7 +143,7 @@ class TestLiveClock(unittest.TestCase):
         mock_response.json.return_value = {
             'current_weather': {
                 'temperature': 72,
-                'weathercode': 0
+                'weathercode': 51
             }
         }
         mock_get.return_value = mock_response
@@ -147,7 +154,9 @@ class TestLiveClock(unittest.TestCase):
         with patch.object(live_clock.SubwayClock, 'get_lat_lon',
                           return_value=(40.71, -74.00)):
             self.clock.fetch_weather_task()
-            self.assertEqual(self.clock.weather_text, "72° Clear")
+            self.assertEqual(self.clock.weather_text, "72°")
+            self.assertEqual(self.clock.weather_condition_text,
+                             live_clock.WeatherCodes.RAIN)
 
     @patch('live_clock.requests.get')
     def test_fetch_trains_task_mock(self, mock_get):

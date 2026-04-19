@@ -33,6 +33,16 @@ class NoWeatherException(Exception):
     ...
 
 
+class WeatherCodes:
+    CLEAR = ''
+    CLOUDY = ''
+    FOG = 'Fog'
+    RAIN = 'Rain'
+    SNOW = 'Snow'
+    STORM = 'Storm'
+    UNKNOWN = ''
+
+
 class SubwayClock:
     # --- Base Colors (Tuned for LED Matrices) ---
     COLORS = {
@@ -100,6 +110,7 @@ class SubwayClock:
         # State data
         self.trains = []
         self.weather_text = ""
+        self.weather_condition_text = ""
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._weather_future = None
         self._train_future = None
@@ -204,9 +215,14 @@ class SubwayClock:
 
             temp = int(data['temperature'])
             code = data['weathercode']
+            logging.info(f'Received weather code: {code}')
             cond = self.map_weather_code(code)
+            logging.info(f'Setting weather_condition_text to {cond}')
             self.weather_text = f"{temp}°"
-            self.weather_contition_text = f"{cond}"
+            self.weather_condition_text = cond
+            logging.info(
+                    f'self.weather_condition_text = '
+                    f'{self.weather_condition_text}')
         except Exception as e:
             logging.error(f"Weather fetch error: {e}")
             # We don't clear weather_text on error to keep showing old data
@@ -218,18 +234,18 @@ class SubwayClock:
 
     def map_weather_code(self, code):
         if code == 0:
-            return "Clear"
+            return WeatherCodes.CLEAR
         elif code in [1, 2, 3]:
-            return "Cloudy"
+            return WeatherCodes.CLOUDY
         elif code in [45, 48]:
-            return "Fog"
+            return WeatherCodes.FOG
         elif code in [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82]:
-            return "Rain"
+            return WeatherCodes.RAIN
         elif code in [71, 73, 75, 77, 85, 86]:
-            return "Snow"
+            return WeatherCodes.SNOW
         elif code in [95, 96, 99]:
-            return "Storm"
-        return ""
+            return WeatherCodes.STORM
+        return WeatherCodes.UNKNOWN
 
     def _fetch_trains_impl(self):
         stop_ids = self.config.get('stop_ids')
@@ -377,6 +393,13 @@ class SubwayClock:
             self.canvas, self.small_font, x_pos, y_pos,
             weather_color, self.weather_text
         )
+        if self.weather_condition_text:
+            x_pos = 64 - (len(self.weather_condition_text) * 4) + 1
+            y_pos = 17
+            graphics.DrawText(
+                self.canvas, self.small_font, x_pos, y_pos,
+                weather_color, self.weather_condition_text
+            )
         self.draw_time()
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
 
