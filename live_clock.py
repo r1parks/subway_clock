@@ -215,14 +215,9 @@ class SubwayClock:
 
             temp = int(data['temperature'])
             code = data['weathercode']
-            logging.info(f'Received weather code: {code}')
             cond = self.map_weather_code(code)
-            logging.info(f'Setting weather_condition_text to {cond}')
             self.weather_text = f"{temp}°"
             self.weather_condition_text = cond
-            logging.info(
-                    f'self.weather_condition_text = '
-                    f'{self.weather_condition_text}')
         except Exception as e:
             logging.error(f"Weather fetch error: {e}")
             # We don't clear weather_text on error to keep showing old data
