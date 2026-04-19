@@ -32,8 +32,8 @@ class NoWeatherException(Exception): ...
 
 
 class WeatherCodes:
-    CLEAR = "Clear"
-    CLOUDY = "Cloudy"
+    CLEAR = ""
+    CLOUDY = ""
     FOG = "Fog"
     RAIN = "Rain"
     SNOW = "Snow"
@@ -322,7 +322,7 @@ class SubwayClock:
     def draw_time(self):
         time_text = time.strftime("%-I:%M").rjust(5)
         time_color = graphics.Color(255, 215, 0)
-        x_pos = 64 - (len(time_text) * 4)
+        x_pos = 64 - (len(time_text) * 4) + 1
         y_pos = 5
         graphics.DrawText(
             self.canvas, self.time_font, x_pos, y_pos, time_color, time_text
@@ -379,13 +379,13 @@ class SubwayClock:
             y_pos += 8
 
         weather_color = graphics.Color(255, 215, 0)
-        x_pos = 64 - (len(self.weather_text) * 4)
+        x_pos = 64 - (len(self.weather_text) * 4) + 1
         y_pos = 11
         graphics.DrawText(
             self.canvas, self.small_font, x_pos, y_pos, weather_color, self.weather_text
         )
         if self.weather_condition_text:
-            x_pos = 64 - (len(self.weather_condition_text) * 4)
+            x_pos = 64 - (len(self.weather_condition_text) * 4) + 1
             y_pos = 17
             graphics.DrawText(
                 self.canvas,
