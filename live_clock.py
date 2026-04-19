@@ -42,6 +42,10 @@ class WeatherCodes:
 
 
 class SubwayClock:
+    # --- Display Constants ---
+    MATRIX_WIDTH = 64
+    CHAR_WIDTH = 4
+
     # --- Base Colors (Tuned for LED Matrices) ---
     COLORS = {
         "BLUE": graphics.Color(0, 50, 255),
@@ -319,14 +323,14 @@ class SubwayClock:
             route_id, route_id
         )
 
+    def draw_right_aligned_text(self, y_pos, font, color, text):
+        x_pos = self.MATRIX_WIDTH - (len(text) * self.CHAR_WIDTH) + 1
+        graphics.DrawText(self.canvas, font, x_pos, y_pos, color, text)
+
     def draw_time(self):
         time_text = time.strftime("%-I:%M").rjust(5)
         time_color = graphics.Color(255, 215, 0)
-        x_pos = 64 - (len(time_text) * 4) + 1
-        y_pos = 5
-        graphics.DrawText(
-            self.canvas, self.time_font, x_pos, y_pos, time_color, time_text
-        )
+        self.draw_right_aligned_text(5, self.time_font, time_color, time_text)
 
     def captive_portal_running(self):
         try:
@@ -379,21 +383,12 @@ class SubwayClock:
             y_pos += 8
 
         weather_color = graphics.Color(255, 215, 0)
-        x_pos = 64 - (len(self.weather_text) * 4) + 1
-        y_pos = 11
-        graphics.DrawText(
-            self.canvas, self.small_font, x_pos, y_pos, weather_color, self.weather_text
+        self.draw_right_aligned_text(
+            11, self.small_font, weather_color, self.weather_text
         )
         if self.weather_condition_text:
-            x_pos = 64 - (len(self.weather_condition_text) * 4) + 1
-            y_pos = 17
-            graphics.DrawText(
-                self.canvas,
-                self.small_font,
-                x_pos,
-                y_pos,
-                weather_color,
-                self.weather_condition_text,
+            self.draw_right_aligned_text(
+                17, self.small_font, weather_color, self.weather_condition_text
             )
         self.draw_time()
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
