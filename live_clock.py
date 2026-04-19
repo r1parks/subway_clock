@@ -205,14 +205,16 @@ class SubwayClock:
             temp = int(data['temperature'])
             code = data['weathercode']
             cond = self.map_weather_code(code)
-            self.weather_text = f"{temp}° {cond}"
+            self.weather_text = f"{temp}°"
+            self.weather_contition_text = f"{cond}"
         except Exception as e:
             logging.error(f"Weather fetch error: {e}")
             # We don't clear weather_text on error to keep showing old data
 
     def fetch_weather_task(self):
         if self._weather_future is None or self._weather_future.done():
-            self._weather_future = self.executor.submit(self._fetch_weather_impl)
+            self._weather_future = self.executor.submit(
+                    self._fetch_weather_impl)
 
     def map_weather_code(self, code):
         if code == 0:
@@ -356,7 +358,7 @@ class SubwayClock:
         self.canvas.Clear()
         now = int(time.time())
         y_pos = 7
-        for train in self.trains[:3]:
+        for train in self.trains[:4]:
             self.draw_route_bullet(0, y_pos, train['route'])
             minutes = max(0, int((train['time'] - now) / 60))
             text = "Now" if minutes == 0 else f"{minutes} min"
@@ -368,7 +370,7 @@ class SubwayClock:
 
         weather_color = graphics.Color(255, 215, 0)
         graphics.DrawText(
-            self.canvas, self.small_font, 2, 31,
+            self.canvas, self.small_font, 64 - (len(self.weather_text) * 4), 11,
             weather_color, self.weather_text
         )
         self.draw_time()
@@ -378,6 +380,11 @@ class SubwayClock:
         logging.info("Starting Subway Clock (Scheduled Mode)...")
 
         # High-priority check for captive portal on startup
+        if self.captive_portal_running():
+            # The captive portal always starts on boot up, and then stops if an
+            # internet connection is detected. Give it a few seconds to shut
+            # down so we don't display the QR code prematurely.
+            time.sleep(3)
         while self.captive_portal_running():
             self.display_wifi_qr()
             time.sleep(5)
@@ -395,7 +402,7 @@ class SubwayClock:
                 logging.error(f"Initial train fetch failed: {e}")
 
         # Set up schedules
-        schedule.every(20).seconds.do(self.fetch_trains_task)
+        schedule.every(30).seconds.do(self.fetch_trains_task)
         schedule.every(5).minutes.do(self.fetch_weather_task)
         schedule.every(5).seconds.do(self.check_config_task)
 
