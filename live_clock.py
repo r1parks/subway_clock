@@ -308,8 +308,10 @@ class SubwayClock:
     def draw_time(self):
         time_text = time.strftime("%-I:%M").rjust(5)
         time_color = graphics.Color(255, 215, 0)
+        x_pos = 64 - (len(time_text) * 4) + 1
+        y_pos = 5
         graphics.DrawText(
-            self.canvas, self.time_font, 64 - (len(time_text) * 4) + 1, 5, time_color, time_text
+            self.canvas, self.time_font, x_pos, y_pos, time_color, time_text
         )
 
     def captive_portal_running(self):
@@ -369,8 +371,10 @@ class SubwayClock:
             y_pos += 8
 
         weather_color = graphics.Color(255, 215, 0)
+        x_pos = 64 - (len(self.weather_text) * 4) + 1
+        y_pos = 11
         graphics.DrawText(
-            self.canvas, self.small_font, 64 - (len(self.weather_text) * 4) + 1, 11,
+            self.canvas, self.small_font, x_pos, y_pos,
             weather_color, self.weather_text
         )
         self.draw_time()
