@@ -234,5 +234,25 @@ class TestLiveClock(unittest.TestCase):
         mock_logging.assert_called_once_with(f"Permission denied to access {live_clock.LOCK_FILE}.")
         mock_exit.assert_called_once_with(1)
 
+    @patch('live_clock.time.time')
+    def test_update_arrival_times(self, mock_time):
+        mock_time.return_value = 10000
+
+        self.clock.trains = [
+            {'route': 'C', 'time': 10000 + 300},  # 5 mins
+            {'route': 'A', 'time': 10000 + 120},  # 2 mins
+            {'route': 'E', 'time': 10000 - 60},   # past (should be 0)
+            {'route': 'F', 'time': 10000},        # exact now (0 mins)
+            {'route': 'R', 'time': 10000 + 600}   # 5th train, ignored
+        ]
+
+        self.clock.update_arrival_times()
+
+        self.assertEqual(len(self.clock.train_arrivals), 4)
+        self.assertEqual(self.clock.train_arrivals[0], ('C', 5))
+        self.assertEqual(self.clock.train_arrivals[1], ('A', 2))
+        self.assertEqual(self.clock.train_arrivals[2], ('E', 0))
+        self.assertEqual(self.clock.train_arrivals[3], ('F', 0))
+
 if __name__ == '__main__':
     unittest.main()

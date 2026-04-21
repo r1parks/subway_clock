@@ -114,6 +114,7 @@ class SubwayClock:
 
         # State data
         self.trains = []
+        self.train_arrivals = []
         self.weather_text = ""
         self.weather_condition_text = ""
         self.executor = ThreadPoolExecutor(max_workers=2)
@@ -332,12 +333,17 @@ class SubwayClock:
         time_color = graphics.Color(255, 215, 0)
         self.draw_right_aligned_text(5, self.time_font, time_color, time_text)
 
-    def draw_upcoming_trains(self):
+    def update_arrival_times(self):
         now = int(time.time())
-        y_pos = 7
+        self.train_arrivals = []
         for train in self.trains[:4]:
-            self.draw_route_bullet(0, y_pos, train["route"])
             minutes = max(0, int((train["time"] - now) / 60))
+            self.train_arrivals.append((train["route"], minutes))
+
+    def draw_upcoming_trains(self):
+        y_pos = 7
+        for route, minutes in self.train_arrivals:
+            self.draw_route_bullet(0, y_pos, route)
             text = "Now" if minutes == 0 else f"{minutes} min"
             color = graphics.Color(200, 200, 200)
             graphics.DrawText(self.canvas, self.font, 11, y_pos, color, text)
@@ -429,8 +435,11 @@ class SubwayClock:
             except Exception as e:
                 logging.error(f"Initial weather fetch failed: {e}")
 
+        self.update_arrival_times()
+
         # Set up schedules
         schedule.every(30).seconds.do(self.fetch_trains_task)
+        schedule.every(15).seconds.do(self.update_arrival_times)
         schedule.every(5).minutes.do(self.fetch_weather_task)
         schedule.every(5).seconds.do(self.check_config_task)
 
