@@ -196,6 +196,43 @@ class TestLiveClock(unittest.TestCase):
             self.assertEqual(len(self.clock.trains), 1)
             self.assertEqual(self.clock.trains[0]['route'], 'A')
 
+    @patch('builtins.open')
+    @patch('live_clock.fcntl.flock')
+    def test_acquire_lock_success(self, mock_flock, mock_open):
+        mock_file = MagicMock()
+        mock_open.return_value = mock_file
+
+        result = live_clock.acquire_lock()
+
+        self.assertEqual(result, mock_file)
+        mock_open.assert_called_once_with(live_clock.LOCK_FILE, "w")
+        mock_flock.assert_called_once_with(mock_file, live_clock.fcntl.LOCK_EX | live_clock.fcntl.LOCK_NB)
+
+    @patch('builtins.open')
+    @patch('live_clock.fcntl.flock')
+    @patch('live_clock.sys.exit')
+    @patch('live_clock.logging.critical')
+    def test_acquire_lock_blocking_io_error(self, mock_logging, mock_exit, mock_flock, mock_open):
+        mock_file = MagicMock()
+        mock_open.return_value = mock_file
+        mock_flock.side_effect = BlockingIOError()
+
+        live_clock.acquire_lock()
+
+        mock_logging.assert_called_once_with("Already running. Exiting.")
+        mock_exit.assert_called_once_with(1)
+
+    @patch('builtins.open')
+    @patch('live_clock.fcntl.flock')
+    @patch('live_clock.sys.exit')
+    @patch('live_clock.logging.critical')
+    def test_acquire_lock_permission_error(self, mock_logging, mock_exit, mock_flock, mock_open):
+        mock_open.side_effect = PermissionError()
+
+        live_clock.acquire_lock()
+
+        mock_logging.assert_called_once_with(f"Permission denied to access {live_clock.LOCK_FILE}.")
+        mock_exit.assert_called_once_with(1)
 
 if __name__ == '__main__':
     unittest.main()
