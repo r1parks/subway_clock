@@ -332,6 +332,27 @@ class SubwayClock:
         time_color = graphics.Color(255, 215, 0)
         self.draw_right_aligned_text(5, self.time_font, time_color, time_text)
 
+    def draw_upcoming_trains(self):
+        now = int(time.time())
+        y_pos = 7
+        for train in self.trains[:4]:
+            self.draw_route_bullet(0, y_pos, train["route"])
+            minutes = max(0, int((train["time"] - now) / 60))
+            text = "Now" if minutes == 0 else f"{minutes} min"
+            color = graphics.Color(200, 200, 200)
+            graphics.DrawText(self.canvas, self.font, 11, y_pos, color, text)
+            y_pos += 8
+
+    def draw_weather(self):
+        weather_color = graphics.Color(255, 215, 0)
+        self.draw_right_aligned_text(
+            11, self.small_font, weather_color, self.weather_text
+        )
+        if self.weather_condition_text:
+            self.draw_right_aligned_text(
+                17, self.small_font, weather_color, self.weather_condition_text
+            )
+
     def captive_portal_running(self):
         try:
             result = subprocess.run(
@@ -372,24 +393,8 @@ class SubwayClock:
     def render(self):
         self.update_brightness()
         self.canvas.Clear()
-        now = int(time.time())
-        y_pos = 7
-        for train in self.trains[:4]:
-            self.draw_route_bullet(0, y_pos, train["route"])
-            minutes = max(0, int((train["time"] - now) / 60))
-            text = "Now" if minutes == 0 else f"{minutes} min"
-            color = graphics.Color(200, 200, 200)
-            graphics.DrawText(self.canvas, self.font, 11, y_pos, color, text)
-            y_pos += 8
-
-        weather_color = graphics.Color(255, 215, 0)
-        self.draw_right_aligned_text(
-            11, self.small_font, weather_color, self.weather_text
-        )
-        if self.weather_condition_text:
-            self.draw_right_aligned_text(
-                17, self.small_font, weather_color, self.weather_condition_text
-            )
+        self.draw_upcoming_trains()
+        self.draw_weather()
         self.draw_time()
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
 
