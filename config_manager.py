@@ -2,7 +2,7 @@ import json
 import os
 import logging
 
-DEFAULT_CONFIG_FILE = '/etc/subway-clock.json'
+DEFAULT_CONFIG_FILE = "/etc/subway-clock.json"
 
 
 class Config:
@@ -27,13 +27,12 @@ class Config:
         try:
             if os.path.exists(self.config_file):
                 self._last_mtime = os.path.getmtime(self.config_file)
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, "r") as f:
                     user_config = json.load(f)
                     self.config.update(user_config)
             else:
                 logging.warning(
-                    f"Config file {self.config_file} not found. "
-                    "Using defaults."
+                    f"Config file {self.config_file} not found. " "Using defaults."
                 )
         except Exception as e:
             logging.error(f"Error reading JSON config: {e}")
@@ -50,20 +49,17 @@ class Config:
     def save(self):
         """Saves the current configuration to the file."""
         try:
-            with open(self.config_file, 'w') as f:
+            with open(self.config_file, "w") as f:
                 json.dump(self.config, f, indent=2)
         except IOError as e:
             logging.error(f"Error writing config file: {e}")
         except Exception as e:
-            logging.error(
-                f"An unexpected error occurred while writing config: {e}"
-            )
+            logging.error(f"An unexpected error occurred while writing config: {e}")
 
     def get(self, field, default=None):
         """Retrieves a configuration value."""
         return self.config.get(
-            field,
-            default if default is not None else self.defaults.get(field)
+            field, default if default is not None else self.defaults.get(field)
         )
 
     def set(self, field, value):

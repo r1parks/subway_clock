@@ -9,7 +9,7 @@ from config_manager import Config
 app = flask.Flask(__name__)
 # Use absolute path relative to this script for the project's stops.json
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-STOPS_FILE = os.path.join(SCRIPT_DIR, 'stops.json')
+STOPS_FILE = os.path.join(SCRIPT_DIR, "stops.json")
 
 # Initialize global config
 config_obj = Config()
@@ -25,13 +25,12 @@ def get_all_stops():
 
     try:
         if os.path.exists(STOPS_FILE):
-            with open(STOPS_FILE, 'r') as f:
+            with open(STOPS_FILE, "r") as f:
                 import json
+
                 _stops_cache = json.load(f)
         else:
-            logging.warning(
-                f"{STOPS_FILE} not found. Run nyc_subway_stops.py first."
-            )
+            logging.warning(f"{STOPS_FILE} not found. Run nyc_subway_stops.py first.")
             _stops_cache = {}
     except Exception as e:
         logging.error(f"Error loading stops.json: {e}")
@@ -52,78 +51,65 @@ def parse_int(value, default, min_val=None, max_val=None):
         return default
 
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/", methods=["GET", "POST"])
 def index():
-    if flask.request.method == 'POST':
-        logging.info(f'received form: {flask.request.form}')
+    if flask.request.method == "POST":
+        logging.info(f"received form: {flask.request.form}")
         new_config = {
-            "portal_ssid": flask.request.form.get(
-                'portal_ssid', 'SubwayClock'
-            ),
-            "stop_ids": flask.request.form.getlist('stop_ids'),
+            "portal_ssid": flask.request.form.get("portal_ssid", "SubwayClock"),
+            "stop_ids": flask.request.form.getlist("stop_ids"),
             "routes": [
-                r.strip() for r in flask.request.form.get(
-                    'routes', ''
-                ).split(',') if r.strip()
+                r.strip()
+                for r in flask.request.form.get("routes", "").split(",")
+                if r.strip()
             ],
             "day_brightness": parse_int(
-                flask.request.form.get('day_brightness'), 100, 0, 100
+                flask.request.form.get("day_brightness"), 100, 0, 100
             ),
             "night_brightness": parse_int(
-                flask.request.form.get('night_brightness'), 2, 0, 100
+                flask.request.form.get("night_brightness"), 2, 0, 100
             ),
-            "night_start_time": flask.request.form.get(
-                'night_start_time', "20:00"
-            ),
-            "night_end_time": flask.request.form.get(
-                'night_end_time', "08:00"
-            ),
-            "weather_zip": parse_int(
-                flask.request.form.get('weather_zip'), 10025
-            ),
+            "night_start_time": flask.request.form.get("night_start_time", "20:00"),
+            "night_end_time": flask.request.form.get("night_end_time", "08:00"),
+            "weather_zip": parse_int(flask.request.form.get("weather_zip"), 10025),
         }
 
         config_obj.update_bulk(new_config)
-        return flask.redirect(flask.url_for('index'))
+        return flask.redirect(flask.url_for("index"))
 
     # --- GET REQUEST (Load Page) ---
     config_obj.load()
     config = config_obj.to_dict()
     all_stops = get_all_stops()
 
-    return flask.render_template(
-        'index.html', config=config, all_stops=all_stops
-    )
+    return flask.render_template("index.html", config=config, all_stops=all_stops)
 
 
-@app.route('/debug')
+@app.route("/debug")
 def debug():
-    services = [
-        'subway-clock.service', 'subway-web.service', 'wifi-connect.service'
-    ]
+    services = ["subway-clock.service", "subway-web.service", "wifi-connect.service"]
     logs = {}
     for service in services:
         try:
             # Capture both stdout and stderr separately and combine them
             result = subprocess.run(
-                ['journalctl', '-u', service, '-n', '200', '--no-pager'],
+                ["journalctl", "-u", service, "-n", "200", "--no-pager"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
-            
+
             output = result.stdout
             if result.stderr:
                 output += f"\n--- Standard Error ---\n{result.stderr}"
-            
-            logs[service] = output if output.strip() \
-                else f"No logs found for {service}"
+
+            logs[service] = output if output.strip() else f"No logs found for {service}"
         except Exception as e:
             logs[service] = f"Error retrieving logs for {service}: {e}"
 
-    return flask.render_template('debug.html', logs=logs)
+    return flask.render_template("debug.html", logs=logs)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Run on port 80 as requested for dedicated hardware service
-    app.run(host='0.0.0.0', port=80)
+    app.run(host="0.0.0.0", port=80)

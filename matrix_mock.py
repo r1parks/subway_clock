@@ -2,7 +2,7 @@ class RGBMatrixOptions:
     def __init__(self):
         self.rows = 32
         self.cols = 64
-        self.hardware_mapping = 'adafruit-hat'
+        self.hardware_mapping = "adafruit-hat"
         self.drop_privileges = False
 
 

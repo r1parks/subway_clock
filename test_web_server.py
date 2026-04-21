@@ -28,12 +28,13 @@ class MockFlask:
     def route(self, path, **kwargs):
         def decorator(f):
             return f
+
         return decorator
 
 
 class MockRequest:
     def __init__(self):
-        self.method = 'GET'
+        self.method = "GET"
         self.form = {}
 
     def get(self, k, d=None):
@@ -44,9 +45,10 @@ class MockRequest:
 
 
 mock_flask = MockFlask()
-sys.modules['flask'] = mock_flask
+sys.modules["flask"] = mock_flask
 
 import web_server  # noqa: E402
+
 web_server.flask = mock_flask
 
 
@@ -85,7 +87,7 @@ class TestWebServer(unittest.TestCase):
 
     def test_index_get(self):
         web_server.config_obj = MockConfig()
-        mock_flask.request.method = 'GET'
+        mock_flask.request.method = "GET"
         mock_flask.render_template_called = False
 
         web_server.index()
@@ -93,13 +95,14 @@ class TestWebServer(unittest.TestCase):
 
     def test_index_post(self):
         web_server.config_obj = MockConfig()
-        mock_flask.request.method = 'POST'
-        mock_flask.request.form = {'portal_ssid': 'new'}
+        mock_flask.request.method = "POST"
+        mock_flask.request.form = {"portal_ssid": "new"}
 
         # Patching the form to have a get method like a dict/MultiDict
         class Form(dict):
             def getlist(self, k):
                 return []
+
         mock_flask.request.form = Form(mock_flask.request.form)
 
         web_server.index()
@@ -118,6 +121,7 @@ class TestWebServer(unittest.TestCase):
 
         def mock_run(*args, **kwargs):
             return MockResult("mock logs")
+
         subprocess.run = mock_run
 
         try:
@@ -126,13 +130,11 @@ class TestWebServer(unittest.TestCase):
             self.assertTrue(mock_flask.render_template_called)
             # Check if logs were passed
             args, kwargs = mock_flask.render_template_args
-            self.assertIn('logs', kwargs)
-            self.assertEqual(
-                kwargs['logs']['subway-clock.service'], "mock logs"
-            )
+            self.assertIn("logs", kwargs)
+            self.assertEqual(kwargs["logs"]["subway-clock.service"], "mock logs")
         finally:
             subprocess.run = original_run
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

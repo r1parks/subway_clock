@@ -24,7 +24,7 @@ class TestConfigManager(unittest.TestCase):
 
     def test_load_config(self):
         test_data = {"portal_ssid": "TestSSID", "day_brightness": 50}
-        with open(self.test_path, 'w') as f:
+        with open(self.test_path, "w") as f:
             json.dump(test_data, f)
 
         config = Config(config_file=self.test_path)
@@ -38,7 +38,7 @@ class TestConfigManager(unittest.TestCase):
         config.set("weather_zip", 90210)
 
         # Verify it saved to disk
-        with open(self.test_path, 'r') as f:
+        with open(self.test_path, "r") as f:
             saved_data = json.load(f)
             self.assertEqual(saved_data["weather_zip"], 90210)
 
@@ -57,5 +57,5 @@ class TestConfigManager(unittest.TestCase):
         self.assertEqual(config_dict["portal_ssid"], "SubwayClock")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

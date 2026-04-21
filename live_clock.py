@@ -172,17 +172,17 @@ class SubwayClock:
         start_dt = datetime.combine(now.date(), start_time)
         if start_dt <= now:
             start_dt += timedelta(days=1)
-            
+
         # Find next end_dt
         end_dt = datetime.combine(now.date(), end_time)
         if end_dt <= now:
             end_dt += timedelta(days=1)
-            
+
         is_night = self.is_night_mode(night_start, night_end)
-        
+
         mins_to_start = (start_dt - now).total_seconds() / 60.0
         mins_to_end = (end_dt - now).total_seconds() / 60.0
-        
+
         transition_duration = 30.0
 
         if 0 <= mins_to_start <= transition_duration:
