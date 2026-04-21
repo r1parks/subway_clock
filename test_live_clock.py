@@ -114,26 +114,86 @@ class TestLiveClock(unittest.TestCase):
 
         self.clock.config.get = MagicMock(side_effect=lambda k: {
             'day_brightness': 100,
-            'night_brightness': 2,
+            'night_brightness': 10,
             'night_start_time': "20:00",
             'night_end_time': "08:00"
         }.get(k))
 
-        # Test switch to night mode
-        with patch.object(live_clock.SubwayClock, 'is_night_mode',
-                          return_value=True):
+        # Test night mode (21:00)
+        with patch('live_clock.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 21, 0)
+            mock_datetime.strptime = datetime.strptime
+            mock_datetime.combine = datetime.combine
             self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 2)
-            self.assertEqual(self.clock.matrix.brightness, 2)
+            self.assertEqual(self.clock.current_brightness, 10)
+            self.assertEqual(self.clock.matrix.brightness, 10)
 
-        # Test stay in day mode
+        # Test day mode (12:00)
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
-        with patch.object(live_clock.SubwayClock, 'is_night_mode',
-                          return_value=False):
+        with patch('live_clock.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
+            mock_datetime.strptime = datetime.strptime
+            mock_datetime.combine = datetime.combine
             self.clock.update_brightness()
             self.assertEqual(self.clock.current_brightness, 100)
             self.assertEqual(self.clock.matrix.brightness, 100)
+
+        # Test transitioning to night mode (19:45 - 15 mins before start)
+        self.clock.matrix.brightness = 100
+        self.clock.current_brightness = 100
+        with patch('live_clock.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 45)
+            mock_datetime.strptime = datetime.strptime
+            mock_datetime.combine = datetime.combine
+            self.clock.update_brightness()
+            self.assertEqual(self.clock.current_brightness, 55)
+            self.assertEqual(self.clock.matrix.brightness, 55)
+
+        # Test transitioning to day mode (07:51 - 9 mins before end)
+        self.clock.matrix.brightness = 10
+        self.clock.current_brightness = 10
+        with patch('live_clock.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 7, 51)
+            mock_datetime.strptime = datetime.strptime
+            mock_datetime.combine = datetime.combine
+            self.clock.update_brightness()
+            self.assertEqual(self.clock.current_brightness, 73)
+            self.assertEqual(self.clock.matrix.brightness, 73)
+
+    def test_update_brightness_short_night(self):
+        self.clock.matrix = MagicMock()
+        self.clock.matrix.brightness = 100
+        self.clock.current_brightness = 100
+
+        self.clock.config.get = MagicMock(side_effect=lambda k: {
+            'day_brightness': 100,
+            'night_brightness': 10,
+            'night_start_time': "20:00",
+            'night_end_time': "20:15"
+        }.get(k))
+
+        # Test at 19:45 (15 mins before start). mins_to_start = 15, mins_to_end = 30.
+        # Should transition to night mode. fraction = 15/30 = 0.5. target = 55.
+        with patch('live_clock.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 45)
+            mock_datetime.strptime = datetime.strptime
+            mock_datetime.combine = datetime.combine
+            self.clock.update_brightness()
+            self.assertEqual(self.clock.current_brightness, 55)
+            self.assertEqual(self.clock.matrix.brightness, 55)
+
+        # Test at 20:00 (Exactly at start, 15 mins before end). mins_to_start = 1440, mins_to_end = 15.
+        # Should transition to day mode. fraction = 15/30 = 0.5. target = 55.
+        self.clock.matrix.brightness = 10
+        self.clock.current_brightness = 10
+        with patch('live_clock.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0)
+            mock_datetime.strptime = datetime.strptime
+            mock_datetime.combine = datetime.combine
+            self.clock.update_brightness()
+            self.assertEqual(self.clock.current_brightness, 55)
+            self.assertEqual(self.clock.matrix.brightness, 55)
 
     @patch('live_clock.requests.get')
     def test_fetch_weather_task_success(self, mock_get):

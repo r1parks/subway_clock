@@ -11,7 +11,7 @@ import subprocess
 import qrcode
 import schedule
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from google.transit import gtfs_realtime_pb2
 
 try:
@@ -161,10 +161,38 @@ class SubwayClock:
         night_start = self.config.get("night_start_time")
         night_end = self.config.get("night_end_time")
 
-        if self.is_night_mode(night_start, night_end):
-            target_brightness = night_b
+        now = datetime.now()
+        try:
+            start_time = datetime.strptime(night_start, "%H:%M").time()
+            end_time = datetime.strptime(night_end, "%H:%M").time()
+        except (ValueError, TypeError):
+            return
+
+        # Find next start_dt
+        start_dt = datetime.combine(now.date(), start_time)
+        if start_dt <= now:
+            start_dt += timedelta(days=1)
+            
+        # Find next end_dt
+        end_dt = datetime.combine(now.date(), end_time)
+        if end_dt <= now:
+            end_dt += timedelta(days=1)
+            
+        is_night = self.is_night_mode(night_start, night_end)
+        
+        mins_to_start = (start_dt - now).total_seconds() / 60.0
+        mins_to_end = (end_dt - now).total_seconds() / 60.0
+        
+        transition_duration = 30.0
+
+        if 0 <= mins_to_start <= transition_duration:
+            fraction = mins_to_start / transition_duration
+            target_brightness = int(night_b + (day_b - night_b) * fraction)
+        elif 0 <= mins_to_end <= transition_duration:
+            fraction = mins_to_end / transition_duration
+            target_brightness = int(day_b + (night_b - day_b) * fraction)
         else:
-            target_brightness = day_b
+            target_brightness = night_b if is_night else day_b
 
         if self.current_brightness != target_brightness:
             self.matrix.brightness = target_brightness
