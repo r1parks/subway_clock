@@ -286,6 +286,8 @@ class SubwayClock:
             if daily and daily.get("sunrise") and daily.get("sunset"):
                 self.sunrise_time = datetime.fromisoformat(daily["sunrise"][0]).strftime("%H:%M")
                 self.sunset_time = datetime.fromisoformat(daily["sunset"][0]).strftime("%H:%M")
+            else:
+                logging.error(f"Failed to populate sun times. Received {resp_json}")
         except Exception as e:
             logging.error(f"Sun times fetch error: {e}")
 
