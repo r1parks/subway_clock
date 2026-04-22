@@ -319,6 +319,107 @@ class TestLiveClock(unittest.TestCase):
         self.assertEqual(self.clock.train_arrivals[2], ("E", 0))
         self.assertEqual(self.clock.train_arrivals[3], ("F", 0))
 
+    @patch("live_clock.requests.get")
+    def test_fetch_weather_task_no_data(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {}
+        mock_get.return_value = mock_response
+
+        self.clock.config.get = MagicMock(return_value=10001)
+
+        with patch.object(live_clock.SubwayClock, "get_lat_lon", return_value=(40.71, -74.00)):
+            self.clock.fetch_weather_task()
+            # wait for future
+            if self.clock._weather_future:
+                self.clock._weather_future.result()
+            self.assertEqual(self.clock.weather_text, "")
+
+    @patch("live_clock.requests.get")
+    def test_fetch_sun_times_impl_success(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "daily": {"sunrise": ["2026-04-21T06:07"], "sunset": ["2026-04-21T19:41"]}
+        }
+        mock_get.return_value = mock_response
+
+        self.clock.config.get = MagicMock(return_value=10001)
+
+        with patch.object(live_clock.SubwayClock, "get_lat_lon", return_value=(40.71, -74.00)):
+            self.clock._fetch_sun_times_impl()
+            self.assertEqual(self.clock.sunrise_time, "06:07")
+            self.assertEqual(self.clock.sunset_time, "19:41")
+
+    def test_clear(self):
+        self.clock.matrix = MagicMock()
+        self.clock.clear()
+        self.clock.matrix.Clear.assert_called_once()
+        
+    def test_draw_time(self):
+        self.clock.canvas = MagicMock()
+        self.clock.time_font = MagicMock()
+        self.clock.draw_time()
+        self.clock.canvas.SetPixel = MagicMock()
+
+    def test_is_night_mode_invalid(self):
+        self.assertFalse(self.clock.is_night_mode("invalid", "invalid"))
+        
+    def test_update_brightness_invalid(self):
+        self.clock.sunset_time = "invalid"
+        self.clock.sunrise_time = "invalid"
+        self.clock.update_brightness() # Should return early
+
+    @patch("live_clock.subprocess.run")
+    def test_captive_portal_running(self, mock_run):
+        mock_result = MagicMock()
+        mock_result.stdout = "active\n"
+        mock_run.return_value = mock_result
+        self.assertTrue(self.clock.captive_portal_running())
+        
+        mock_result.stdout = "inactive\n"
+        self.assertFalse(self.clock.captive_portal_running())
+
+    def test_display_wifi_qr(self):
+        canvas_mock = MagicMock()
+        self.clock.canvas = canvas_mock
+        self.clock.small_font = MagicMock()
+        self.clock.matrix = MagicMock()
+        self.clock.config.get = MagicMock(return_value="TestSSID")
+        self.clock.display_wifi_qr()
+        canvas_mock.Clear.assert_called_once()
+        
+    def test_draw_weather_missing_condition(self):
+        self.clock.canvas = MagicMock()
+        self.clock.small_font = MagicMock()
+        self.clock.weather_text = "50"
+        self.clock.weather_condition_text = ""
+        self.clock.draw_weather()
+        
+    def test_render(self):
+        canvas_mock = MagicMock()
+        self.clock.canvas = canvas_mock
+        self.clock.matrix = MagicMock()
+        self.clock.update_brightness = MagicMock()
+        self.clock.draw_upcoming_trains = MagicMock()
+        self.clock.draw_weather = MagicMock()
+        self.clock.draw_time = MagicMock()
+        self.clock.render()
+        self.clock.update_brightness.assert_called_once()
+        canvas_mock.Clear.assert_called_once()
+
+    def test_check_config_task(self):
+        self.clock.config.is_modified = MagicMock(return_value=True)
+        self.clock.config.load = MagicMock()
+        self.clock.config.get = MagicMock(side_effect=["old", "new"])
+        self.clock.fetch_trains_task = MagicMock()
+        self.clock.fetch_weather_task = MagicMock()
+        self.clock.fetch_sun_times_task = MagicMock()
+        self.clock.check_config_task()
+        self.clock.fetch_sun_times_task.assert_called_once()
+
+        self.clock.config.is_modified = MagicMock(return_value=False)
+        self.clock.check_config_task() # No exception
 
 if __name__ == "__main__":
     unittest.main()
