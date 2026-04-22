@@ -106,13 +106,13 @@ class TestLiveClock(unittest.TestCase):
         self.clock.matrix = MagicMock()
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
+        self.clock.sunset_time = "20:00"
+        self.clock.sunrise_time = "08:00"
 
         self.clock.config.get = MagicMock(
             side_effect=lambda k: {
                 "day_brightness": 100,
                 "night_brightness": 10,
-                "night_start_time": "20:00",
-                "night_end_time": "08:00",
             }.get(k)
         )
 
@@ -162,13 +162,13 @@ class TestLiveClock(unittest.TestCase):
         self.clock.matrix = MagicMock()
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
+        self.clock.sunset_time = "20:00"
+        self.clock.sunrise_time = "20:15"
 
         self.clock.config.get = MagicMock(
             side_effect=lambda k: {
                 "day_brightness": 100,
                 "night_brightness": 10,
-                "night_start_time": "20:00",
-                "night_end_time": "20:15",
             }.get(k)
         )
 
@@ -200,7 +200,8 @@ class TestLiveClock(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "current_weather": {"temperature": 72, "weathercode": 51}
+            "current_weather": {"temperature": 72, "weathercode": 51},
+            "daily": {"sunrise": ["2026-04-21T06:07"], "sunset": ["2026-04-21T19:41"]}
         }
         mock_get.return_value = mock_response
 

@@ -113,6 +113,8 @@ class SubwayClock:
         self.weather_zip = None
 
         # State data
+        self.sunset_time = "18:00"
+        self.sunrise_time = "06:00"
         self.trains = []
         self.train_arrivals = []
         self.weather_text = ""
@@ -120,6 +122,7 @@ class SubwayClock:
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._weather_future = None
         self._train_future = None
+        self._sun_future = None
 
     def setup_matrix(self):
         # --- Matrix Setup ---
@@ -158,8 +161,8 @@ class SubwayClock:
     def update_brightness(self):
         day_b = self.config.get("day_brightness")
         night_b = self.config.get("night_brightness")
-        night_start = self.config.get("night_start_time")
-        night_end = self.config.get("night_end_time")
+        night_start = self.sunset_time
+        night_end = self.sunrise_time
 
         now = datetime.now()
         try:
@@ -245,7 +248,9 @@ class SubwayClock:
             }
             response = requests.get(endpoint, params=params, timeout=5)
             response.raise_for_status()
-            data = response.json().get("current_weather")
+            
+            resp_json = response.json()
+            data = resp_json.get("current_weather")
             if not data:
                 raise NoWeatherException("No weather data")
 
@@ -261,6 +266,32 @@ class SubwayClock:
     def fetch_weather_task(self):
         if self._weather_future is None or self._weather_future.done():
             self._weather_future = self.executor.submit(self._fetch_weather_impl)
+
+    def _fetch_sun_times_impl(self):
+        zip_code = self.config.get("weather_zip")
+        endpoint = "https://api.open-meteo.com/v1/forecast"
+        try:
+            lat, lon = self.get_lat_lon(zip_code)
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "daily": ["sunrise", "sunset"],
+                "timezone": "auto",
+            }
+            response = requests.get(endpoint, params=params, timeout=5)
+            response.raise_for_status()
+            
+            resp_json = response.json()
+            daily = resp_json.get("daily")
+            if daily and daily.get("sunrise") and daily.get("sunset"):
+                self.sunrise_time = daily["sunrise"][0][-5:]
+                self.sunset_time = daily["sunset"][0][-5:]
+        except Exception as e:
+            logging.error(f"Sun times fetch error: {e}")
+
+    def fetch_sun_times_task(self):
+        if self._sun_future is None or self._sun_future.done():
+            self._sun_future = self.executor.submit(self._fetch_sun_times_impl)
 
     def map_weather_code(self, code):
         if code == 0:
@@ -320,11 +351,14 @@ class SubwayClock:
 
     def check_config_task(self):
         if self.config.is_modified():
+            old_zip = self.config.get("weather_zip")
             logging.info("Config file changed, reloading...")
             self.config.load()
             # If config changed, trigger immediate data refresh
             self.fetch_trains_task()
             self.fetch_weather_task()
+            if old_zip != self.config.get("weather_zip"):
+                self.fetch_sun_times_task()
 
     def draw_route_bullet(self, x, y, route_id):
         route = self.route_name(route_id)
@@ -448,6 +482,7 @@ class SubwayClock:
         # Initial data fetch
         self.fetch_trains_task()
         self.fetch_weather_task()
+        self.fetch_sun_times_task()
 
         # Wait for the initial data fetches to finish so we don't clear the
         # "starting..." screen prematurely.
@@ -463,6 +498,12 @@ class SubwayClock:
             except Exception as e:
                 logging.error(f"Initial weather fetch failed: {e}")
 
+        if self._sun_future:
+            try:
+                self._sun_future.result(timeout=15)
+            except Exception as e:
+                logging.error(f"Initial sun times fetch failed: {e}")
+
         self.update_arrival_times()
 
         # Set up schedules
@@ -470,6 +511,7 @@ class SubwayClock:
         schedule.every(15).seconds.do(self.update_arrival_times)
         schedule.every(5).minutes.do(self.fetch_weather_task)
         schedule.every(5).seconds.do(self.check_config_task)
+        schedule.every(24).hours.do(self.fetch_sun_times_task)
 
         while True:
             schedule.run_pending()

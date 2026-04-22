@@ -15,8 +15,6 @@ class Config:
             "routes": ["A", "C", "B"],
             "day_brightness": 100,
             "night_brightness": 2,
-            "night_start_time": "20:00",
-            "night_end_time": "08:00",
             "weather_zip": 10025,
         }
         self.config = self.defaults.copy()
