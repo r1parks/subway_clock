@@ -284,8 +284,8 @@ class SubwayClock:
             resp_json = response.json()
             daily = resp_json.get("daily")
             if daily and daily.get("sunrise") and daily.get("sunset"):
-                self.sunrise_time = daily["sunrise"][0][-5:]
-                self.sunset_time = daily["sunset"][0][-5:]
+                self.sunrise_time = datetime.fromisoformat(daily["sunrise"][0]).strftime("%H:%M")
+                self.sunset_time = datetime.fromisoformat(daily["sunset"][0]).strftime("%H:%M")
         except Exception as e:
             logging.error(f"Sun times fetch error: {e}")
 
@@ -511,7 +511,7 @@ class SubwayClock:
         schedule.every(15).seconds.do(self.update_arrival_times)
         schedule.every(5).minutes.do(self.fetch_weather_task)
         schedule.every(5).seconds.do(self.check_config_task)
-        schedule.every(24).hours.do(self.fetch_sun_times_task)
+        schedule.every(6).hours.do(self.fetch_sun_times_task)
 
         while True:
             schedule.run_pending()
