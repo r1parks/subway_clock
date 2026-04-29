@@ -136,16 +136,16 @@ class TestLiveClock(unittest.TestCase):
             self.assertEqual(self.clock.current_brightness, 100)
             self.assertEqual(self.clock.matrix.brightness, 100)
 
-        # Test transitioning to night mode (19:45 - 15 mins before start)
+        # Test transitioning to night mode (19:50 - 10 mins before start)
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
         with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 45)
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 50)
             mock_datetime.strptime = datetime.strptime
             mock_datetime.combine = datetime.combine
             self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 55)
-            self.assertEqual(self.clock.matrix.brightness, 55)
+            self.assertEqual(self.clock.current_brightness, 85)
+            self.assertEqual(self.clock.matrix.brightness, 85)
 
         # Test transitioning to day mode (07:51 - 9 mins before end)
         self.clock.matrix.brightness = 10
@@ -155,8 +155,8 @@ class TestLiveClock(unittest.TestCase):
             mock_datetime.strptime = datetime.strptime
             mock_datetime.combine = datetime.combine
             self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 73)
-            self.assertEqual(self.clock.matrix.brightness, 73)
+            self.assertEqual(self.clock.current_brightness, 28)
+            self.assertEqual(self.clock.matrix.brightness, 28)
 
     def test_update_brightness_short_night(self):
         self.clock.matrix = MagicMock()
@@ -172,18 +172,18 @@ class TestLiveClock(unittest.TestCase):
             }.get(k)
         )
 
-        # Test at 19:45 (15 mins before start). mins_to_start = 15, mins_to_end = 30.
-        # Should transition to night mode. fraction = 15/30 = 0.5. target = 55.
+        # Test at 19:50 (10 mins before start). mins_to_start = 10, mins_to_end = 25.
+        # Should transition to night mode. fraction = (10+15)/30 = 0.833. target = 85.
         with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 45)
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 50)
             mock_datetime.strptime = datetime.strptime
             mock_datetime.combine = datetime.combine
             self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 55)
-            self.assertEqual(self.clock.matrix.brightness, 55)
+            self.assertEqual(self.clock.current_brightness, 85)
+            self.assertEqual(self.clock.matrix.brightness, 85)
 
-        # Test at 20:00 (Exactly at start, 15 mins before end). mins_to_start = 1440, mins_to_end = 15.
-        # Should transition to day mode. fraction = 15/30 = 0.5. target = 55.
+        # Test at 20:00 (Exactly at start, 15 mins before end). mins_to_start = 0, mins_to_end = 15.
+        # Should transition to day mode. fraction = (0+15)/30 = 0.5. target = 55.
         self.clock.matrix.brightness = 10
         self.clock.current_brightness = 10
         with patch("live_clock.datetime") as mock_datetime:

@@ -171,28 +171,31 @@ class SubwayClock:
         except (ValueError, TypeError):
             return
 
-        # Find next start_dt
         start_dt = datetime.combine(now.date(), start_time)
-        if start_dt <= now:
-            start_dt += timedelta(days=1)
-
-        # Find next end_dt
         end_dt = datetime.combine(now.date(), end_time)
-        if end_dt <= now:
-            end_dt += timedelta(days=1)
+
+        mins_to_start = (start_dt - now).total_seconds() / 60.0
+        if mins_to_start < -12 * 60:
+            mins_to_start += 24 * 60
+        elif mins_to_start > 12 * 60:
+            mins_to_start -= 24 * 60
+
+        mins_to_end = (end_dt - now).total_seconds() / 60.0
+        if mins_to_end < -12 * 60:
+            mins_to_end += 24 * 60
+        elif mins_to_end > 12 * 60:
+            mins_to_end -= 24 * 60
 
         is_night = self.is_night_mode(night_start, night_end)
 
-        mins_to_start = (start_dt - now).total_seconds() / 60.0
-        mins_to_end = (end_dt - now).total_seconds() / 60.0
-
         transition_duration = 30.0
+        half_transition = transition_duration / 2.0
 
-        if 0 <= mins_to_start <= transition_duration:
-            fraction = mins_to_start / transition_duration
+        if -half_transition <= mins_to_start <= half_transition:
+            fraction = (mins_to_start + half_transition) / transition_duration
             target_brightness = int(night_b + (day_b - night_b) * fraction)
-        elif 0 <= mins_to_end <= transition_duration:
-            fraction = mins_to_end / transition_duration
+        elif -half_transition <= mins_to_end <= half_transition:
+            fraction = (mins_to_end + half_transition) / transition_duration
             target_brightness = int(day_b + (night_b - day_b) * fraction)
         else:
             target_brightness = night_b if is_night else day_b
