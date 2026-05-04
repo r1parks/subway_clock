@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta
 import time
 from unittest.mock import MagicMock, patch
 import sys
@@ -18,45 +18,6 @@ import live_clock  # noqa: E402
 class TestLiveClock(unittest.TestCase):
     def setUp(self):
         self.clock = live_clock.SubwayClock()
-
-    def test_is_night_mode(self):
-        # Case 1: Start < End (e.g., 20:00 to 22:00)
-        start = "20:00"
-        end = "22:00"
-
-        # Inside window
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = dt_time(21, 0)
-            mock_datetime.strptime = datetime.strptime
-            self.assertTrue(self.clock.is_night_mode(start, end))
-
-        # Outside window
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = dt_time(19, 0)
-            mock_datetime.strptime = datetime.strptime
-            self.assertFalse(self.clock.is_night_mode(start, end))
-
-        # Case 2: Start > End (Over midnight, e.g., 20:00 to 08:00)
-        start = "20:00"
-        end = "08:00"
-
-        # Before midnight
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = dt_time(23, 0)
-            mock_datetime.strptime = datetime.strptime
-            self.assertTrue(self.clock.is_night_mode(start, end))
-
-        # After midnight
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = dt_time(1, 0)
-            mock_datetime.strptime = datetime.strptime
-            self.assertTrue(self.clock.is_night_mode(start, end))
-
-        # During day
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value.time.return_value = dt_time(12, 0)
-            mock_datetime.strptime = datetime.strptime
-            self.assertFalse(self.clock.is_night_mode(start, end))
 
     def test_route_name(self):
         self.assertEqual(self.clock.route_name("GS"), "S")
@@ -106,8 +67,13 @@ class TestLiveClock(unittest.TestCase):
         self.clock.matrix = MagicMock()
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
-        self.clock.sunset_time = "20:00"
-        self.clock.sunrise_time = "08:00"
+        
+        # Sunset 20:00, dim_finish = 20:15
+        self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
+        self.clock.dim_finish_time = datetime(2024, 1, 1, 20, 15)
+        # Sunrise 08:00, undim_finish = 08:15 (Next day)
+        self.clock.next_sunrise = datetime(2024, 1, 2, 8, 0)
+        self.clock.undim_finish_time = datetime(2024, 1, 2, 8, 15)
 
         self.clock.config.get = MagicMock(
             side_effect=lambda k: {
@@ -119,51 +85,58 @@ class TestLiveClock(unittest.TestCase):
         # Test night mode (21:00)
         with patch("live_clock.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2024, 1, 1, 21, 0)
-            mock_datetime.strptime = datetime.strptime
-            mock_datetime.combine = datetime.combine
             self.clock.update_brightness()
             self.assertEqual(self.clock.current_brightness, 10)
             self.assertEqual(self.clock.matrix.brightness, 10)
 
         # Test day mode (12:00)
+        self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
+        self.clock.dim_finish_time = datetime(2024, 1, 1, 20, 15)
+        self.clock.next_sunrise = datetime(2024, 1, 2, 8, 0)
+        self.clock.undim_finish_time = datetime(2024, 1, 2, 8, 15)
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
         with patch("live_clock.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
-            mock_datetime.strptime = datetime.strptime
-            mock_datetime.combine = datetime.combine
             self.clock.update_brightness()
             self.assertEqual(self.clock.current_brightness, 100)
             self.assertEqual(self.clock.matrix.brightness, 100)
 
-        # Test transitioning to night mode (19:50 - 10 mins before start)
+        # Test transitioning to night mode (19:50) - 5 mins into 30 min transition
+        self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
+        self.clock.dim_finish_time = datetime(2024, 1, 1, 20, 15)
+        self.clock.next_sunrise = datetime(2024, 1, 2, 8, 0)
+        self.clock.undim_finish_time = datetime(2024, 1, 2, 8, 15)
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
         with patch("live_clock.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 50)
-            mock_datetime.strptime = datetime.strptime
-            mock_datetime.combine = datetime.combine
             self.clock.update_brightness()
             self.assertEqual(self.clock.current_brightness, 85)
             self.assertEqual(self.clock.matrix.brightness, 85)
 
-        # Test transitioning to day mode (07:51 - 9 mins before end)
+        # Test transitioning to day mode (07:51) - 6 mins into 30 min transition
+        self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
+        self.clock.dim_finish_time = datetime(2024, 1, 1, 20, 15)
+        self.clock.next_sunrise = datetime(2024, 1, 2, 8, 0)
+        self.clock.undim_finish_time = datetime(2024, 1, 2, 8, 15)
         self.clock.matrix.brightness = 10
         self.clock.current_brightness = 10
         with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 7, 51)
-            mock_datetime.strptime = datetime.strptime
-            mock_datetime.combine = datetime.combine
+            mock_datetime.now.return_value = datetime(2024, 1, 2, 7, 51)
             self.clock.update_brightness()
             self.assertEqual(self.clock.current_brightness, 28)
             self.assertEqual(self.clock.matrix.brightness, 28)
 
-    def test_update_brightness_short_night(self):
+    def test_update_brightness_rollover(self):
         self.clock.matrix = MagicMock()
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
-        self.clock.sunset_time = "20:00"
-        self.clock.sunrise_time = "20:15"
+        
+        self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
+        self.clock.dim_finish_time = datetime(2024, 1, 1, 20, 15)
+        self.clock.next_sunrise = datetime(2024, 1, 2, 8, 0)
+        self.clock.undim_finish_time = datetime(2024, 1, 2, 8, 15)
 
         self.clock.config.get = MagicMock(
             side_effect=lambda k: {
@@ -172,27 +145,17 @@ class TestLiveClock(unittest.TestCase):
             }.get(k)
         )
 
-        # Test at 19:50 (10 mins before start). mins_to_start = 10, mins_to_end = 25.
-        # Should transition to night mode. fraction = (10+15)/30 = 0.833. target = 85.
+        # Cross the dim finish threshold to trigger rollover
         with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 50)
-            mock_datetime.strptime = datetime.strptime
-            mock_datetime.combine = datetime.combine
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 16)
             self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 85)
-            self.assertEqual(self.clock.matrix.brightness, 85)
-
-        # Test at 20:00 (Exactly at start, 15 mins before end). mins_to_start = 0, mins_to_end = 15.
-        # Should transition to day mode. fraction = (0+15)/30 = 0.5. target = 55.
-        self.clock.matrix.brightness = 10
-        self.clock.current_brightness = 10
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0)
-            mock_datetime.strptime = datetime.strptime
-            mock_datetime.combine = datetime.combine
-            self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 55)
-            self.assertEqual(self.clock.matrix.brightness, 55)
+            
+            # Should have rolled over sunset by 1 day
+            self.assertEqual(self.clock.next_sunset, datetime(2024, 1, 2, 20, 0))
+            self.assertEqual(self.clock.dim_finish_time, datetime(2024, 1, 2, 20, 15))
+            
+            # Sunrise hasn't crossed yet, stays the same
+            self.assertEqual(self.clock.next_sunrise, datetime(2024, 1, 2, 8, 0))
 
     @patch("live_clock.requests.get")
     def test_fetch_weather_task_success(self, mock_get):
@@ -346,10 +309,14 @@ class TestLiveClock(unittest.TestCase):
 
         self.clock.config.get = MagicMock(return_value=10001)
 
-        with patch.object(live_clock.SubwayClock, "get_lat_lon", return_value=(40.71, -74.00)):
-            self.clock._fetch_sun_times_impl()
-            self.assertEqual(self.clock.sunrise_time, "06:07")
-            self.assertEqual(self.clock.sunset_time, "19:41")
+        with patch("live_clock.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2026, 4, 21, 0, 0) # Fake 12am before sunrise
+            mock_datetime.fromisoformat = datetime.fromisoformat
+            
+            with patch.object(live_clock.SubwayClock, "get_lat_lon", return_value=(40.71, -74.00)):
+                self.clock._fetch_sun_times_impl()
+                self.assertEqual(self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7))
+                self.assertEqual(self.clock.next_sunset, datetime(2026, 4, 21, 19, 41))
 
     def test_clear(self):
         self.clock.matrix = MagicMock()
@@ -362,12 +329,9 @@ class TestLiveClock(unittest.TestCase):
         self.clock.draw_time()
         self.clock.canvas.SetPixel = MagicMock()
 
-    def test_is_night_mode_invalid(self):
-        self.assertFalse(self.clock.is_night_mode("invalid", "invalid"))
-        
     def test_update_brightness_invalid(self):
-        self.clock.sunset_time = "invalid"
-        self.clock.sunrise_time = "invalid"
+        self.clock.next_sunset = None
+        self.clock.next_sunrise = None
         self.clock.update_brightness() # Should return early
 
     @patch("live_clock.subprocess.run")

@@ -113,8 +113,10 @@ class SubwayClock:
         self.weather_zip = None
 
         # State data
-        self.sunset_time = "18:00"
-        self.sunrise_time = "06:00"
+        self.next_sunset = None
+        self.next_sunrise = None
+        self.dim_finish_time = None
+        self.undim_finish_time = None
         self.trains = []
         self.train_arrivals = []
         self.weather_text = ""
@@ -159,63 +161,43 @@ class SubwayClock:
             self.matrix.Clear()
 
     def update_brightness(self):
-        day_b = self.config.get("day_brightness")
-        night_b = self.config.get("night_brightness")
-        night_start = self.sunset_time
-        night_end = self.sunrise_time
-
-        now = datetime.now()
-        try:
-            start_time = datetime.strptime(night_start, "%H:%M").time()
-            end_time = datetime.strptime(night_end, "%H:%M").time()
-        except (ValueError, TypeError):
+        if not all([self.next_sunset, self.next_sunrise, self.dim_finish_time, self.undim_finish_time]):
             return
 
-        start_dt = datetime.combine(now.date(), start_time)
-        end_dt = datetime.combine(now.date(), end_time)
-
-        mins_to_start = (start_dt - now).total_seconds() / 60.0
-        if mins_to_start < -12 * 60:
-            mins_to_start += 24 * 60
-        elif mins_to_start > 12 * 60:
-            mins_to_start -= 24 * 60
-
-        mins_to_end = (end_dt - now).total_seconds() / 60.0
-        if mins_to_end < -12 * 60:
-            mins_to_end += 24 * 60
-        elif mins_to_end > 12 * 60:
-            mins_to_end -= 24 * 60
-
-        is_night = self.is_night_mode(night_start, night_end)
-
+        day_b = self.config.get("day_brightness")
+        night_b = self.config.get("night_brightness")
         transition_duration = 30.0
-        half_transition = transition_duration / 2.0
 
-        if -half_transition <= mins_to_start <= half_transition:
-            fraction = (mins_to_start + half_transition) / transition_duration
-            target_brightness = int(night_b + (day_b - night_b) * fraction)
-        elif -half_transition <= mins_to_end <= half_transition:
-            fraction = (mins_to_end + half_transition) / transition_duration
+        now = datetime.now()
+
+        # Rollover check
+        if now > self.dim_finish_time:
+            self.next_sunset += timedelta(days=1)
+            self.dim_finish_time += timedelta(days=1)
+        if now > self.undim_finish_time:
+            self.next_sunrise += timedelta(days=1)
+            self.undim_finish_time += timedelta(days=1)
+
+        dim_start = self.dim_finish_time - timedelta(minutes=transition_duration)
+        undim_start = self.undim_finish_time - timedelta(minutes=transition_duration)
+
+        if dim_start <= now <= self.dim_finish_time:
+            mins_elapsed = (now - dim_start).total_seconds() / 60.0
+            fraction = mins_elapsed / transition_duration
             target_brightness = int(day_b + (night_b - day_b) * fraction)
+        elif undim_start <= now <= self.undim_finish_time:
+            mins_elapsed = (now - undim_start).total_seconds() / 60.0
+            fraction = mins_elapsed / transition_duration
+            target_brightness = int(night_b + (day_b - night_b) * fraction)
         else:
-            target_brightness = night_b if is_night else day_b
+            if self.undim_finish_time < self.dim_finish_time:
+                target_brightness = night_b
+            else:
+                target_brightness = day_b
 
         if self.current_brightness != target_brightness:
             self.matrix.brightness = target_brightness
             self.current_brightness = target_brightness
-
-    def is_night_mode(self, night_start, night_end):
-        now = datetime.now().time()
-        try:
-            start_time = datetime.strptime(night_start, "%H:%M").time()
-            end_time = datetime.strptime(night_end, "%H:%M").time()
-        except (ValueError, TypeError):
-            return False
-
-        if start_time < end_time:
-            return start_time <= now <= end_time
-        else:
-            return now >= start_time or now <= end_time
 
     def get_lat_lon(self, zip_code):
         if (
@@ -287,8 +269,24 @@ class SubwayClock:
             resp_json = response.json()
             daily = resp_json.get("daily")
             if daily and daily.get("sunrise") and daily.get("sunset"):
-                self.sunrise_time = datetime.fromisoformat(daily["sunrise"][0]).strftime("%H:%M")
-                self.sunset_time = datetime.fromisoformat(daily["sunset"][0]).strftime("%H:%M")
+                now = datetime.now()
+                transition_duration = 30.0
+                
+                for sr_iso in daily["sunrise"]:
+                    sr = datetime.fromisoformat(sr_iso).replace(tzinfo=None)
+                    finish_time = sr + timedelta(minutes=transition_duration / 2)
+                    if finish_time > now:
+                        self.next_sunrise = sr
+                        self.undim_finish_time = finish_time
+                        break
+                        
+                for ss_iso in daily["sunset"]:
+                    ss = datetime.fromisoformat(ss_iso).replace(tzinfo=None)
+                    finish_time = ss + timedelta(minutes=transition_duration / 2)
+                    if finish_time > now:
+                        self.next_sunset = ss
+                        self.dim_finish_time = finish_time
+                        break
             else:
                 logging.error(f"Failed to populate sun times. Received {resp_json}")
         except Exception as e:
@@ -411,7 +409,13 @@ class SubwayClock:
         y_pos = 7
         for route, minutes in self.train_arrivals:
             self.draw_route_bullet(0, y_pos, route)
-            text = "Now" if minutes == 0 else f"{minutes} min"
+            if minutes == 0:
+                text = "Now"
+            elif minutes >= 60:
+                hours = minutes / 60.0
+                text = f"{hours:.1f} hr"
+            else:
+                text = f"{minutes} min"
             color = graphics.Color(200, 200, 200)
             graphics.DrawText(self.canvas, self.font, 11, y_pos, color, text)
             y_pos += 8
