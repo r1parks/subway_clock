@@ -3,21 +3,33 @@ from datetime import datetime, time as dt_time, timedelta
 import time
 from unittest.mock import MagicMock, patch
 import sys
+import logging
 
-# Mock hardware and transit libraries before importing live_clock
-mock_transit = MagicMock()
-sys.modules["google.transit"] = mock_transit
+# Disable logging during tests to keep console clean
+logging.disable(logging.CRITICAL)
+
+# Mock non-standard packages
+sys.modules["google"] = MagicMock()
+sys.modules["google.transit"] = MagicMock()
 sys.modules["google.transit.gtfs_realtime_pb2"] = MagicMock()
 sys.modules["qrcode"] = MagicMock()
 
-import live_clock  # noqa: E402
+import live_clock
 
 
 class TestLiveClock(unittest.TestCase):
     def setUp(self):
-        mock_matrix = MagicMock()
-        mock_matrix.brightness = 100
-        self.clock = live_clock.SubwayClock(matrix=mock_matrix)
+        self.mock_matrix = MagicMock()
+        self.mock_matrix.brightness = 100
+        
+        self.mock_weather = MagicMock()
+        self.mock_transit = MagicMock()
+        
+        self.clock = live_clock.SubwayClock(
+            matrix=self.mock_matrix,
+            weather_client=self.mock_weather,
+            transit_client=self.mock_transit
+        )
 
     def test_route_name(self):
         self.assertEqual(self.clock.route_name("GS"), "S")
@@ -35,33 +47,6 @@ class TestLiveClock(unittest.TestCase):
         self.assertEqual(
             self.clock.map_weather_code(999), live_clock.WeatherCodes.UNKNOWN
         )
-
-    @patch("live_clock.requests.get")
-    def test_get_lat_lon_success(self, mock_get):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "places": [{"latitude": "40.71", "longitude": "-74.00"}]
-        }
-        mock_get.return_value = mock_response
-
-        lat, lon = self.clock.get_lat_lon(10001)
-        self.assertEqual(lat, 40.71)
-        self.assertEqual(lon, -74.00)
-        # Check cache
-        self.assertEqual(self.clock.weather_zip, 10001)
-
-        # Second call should use cache (mock_get.call_count should still be 1)
-        lat, lon = self.clock.get_lat_lon(10001)
-        self.assertEqual(mock_get.call_count, 1)
-
-    @patch("live_clock.requests.get")
-    def test_get_lat_lon_failure(self, mock_get):
-        mock_get.side_effect = Exception("API Down")
-        lat, lon = self.clock.get_lat_lon(10001)
-        # Fallback values
-        self.assertEqual(lat, 41.50)
-        self.assertEqual(lon, -73.97)
 
     def test_update_brightness(self):
         self.clock.current_brightness = 100
@@ -153,64 +138,65 @@ class TestLiveClock(unittest.TestCase):
             # Sunrise hasn't crossed yet, stays the same
             self.assertEqual(self.clock.next_sunrise, datetime(2024, 1, 2, 8, 0))
 
-    @patch("live_clock.requests.get")
-    def test_fetch_weather_task_success(self, mock_get):
-        # Mock successful API response
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "current_weather": {"temperature": 72, "weathercode": 51},
-            "daily": {"sunrise": ["2026-04-21T06:07"], "sunset": ["2026-04-21T19:41"]}
-        }
-        mock_get.return_value = mock_response
-
+    def test_fetch_weather_task_success(self):
         self.clock.config.get = MagicMock(return_value=10001)
+        self.mock_weather.get_current_weather.return_value = {
+            "temperature": 72,
+            "weathercode": 51
+        }
 
-        # Mock get_lat_lon to avoid another network call
-        with patch.object(
-            live_clock.SubwayClock, "get_lat_lon", return_value=(40.71, -74.00)
-        ):
-            self.clock.fetch_weather_task()
-            self.assertEqual(self.clock.weather_text, "72°")
-            self.assertEqual(
-                self.clock.weather_condition_text, live_clock.WeatherCodes.RAIN
-            )
+        self.clock.fetch_weather_task()
+        if self.clock._weather_future:
+            self.clock._weather_future.result()
 
-    @patch("live_clock.requests.get")
-    def test_fetch_trains_task_mock(self, mock_get):
-        # Mock a minimal GTFS response for the first call, empty for others
-        mock_response = MagicMock()
-        mock_response.status_code = 200
+        self.assertEqual(self.clock.weather_text, "72°")
+        self.assertEqual(
+            self.clock.weather_condition_text, live_clock.WeatherCodes.RAIN
+        )
+        self.mock_weather.get_current_weather.assert_called_once_with(10001)
 
-        # We only want one response to succeed with data
-        mock_empty = MagicMock()
-        mock_empty.status_code = 404  # Skip others
+    def test_fetch_weather_task_no_data(self):
+        self.clock.config.get = MagicMock(return_value=10001)
+        self.mock_weather.get_current_weather.return_value = None
 
-        mock_get.side_effect = [mock_response] + [mock_empty] * 7
+        self.clock.fetch_weather_task()
+        if self.clock._weather_future:
+            self.clock._weather_future.result()
 
+        self.assertEqual(self.clock.weather_text, "")
+
+    def test_fetch_trains_task_mock(self):
         self.clock.config.get = MagicMock(
             side_effect=lambda k: {"stop_ids": ["A19S"], "routes": ["A"]}.get(k)
         )
+        self.mock_transit.fetch_upcoming_trains.return_value = [
+            {"route": "A", "time": int(time.time()) + 300}
+        ]
 
-        with patch("live_clock.gtfs_realtime_pb2.FeedMessage") as mock_feed_class:
-            mock_feed = mock_feed_class.return_value
-            # Create a mock entity
-            entity = MagicMock()
-            entity.HasField.side_effect = lambda x: x == "trip_update"
-            entity.trip_update.trip.route_id = "A"
+        self.clock.fetch_trains_task()
+        if self.clock._train_future:
+            self.clock._train_future.result()
 
-            stop_time = MagicMock()
-            stop_time.stop_id = "A19S"
-            stop_time.HasField.side_effect = lambda x: x == "arrival"
-            stop_time.arrival.HasField.side_effect = lambda x: x == "time"
-            stop_time.arrival.time = int(time.time()) + 300  # 5 mins from now
+        self.assertEqual(len(self.clock.trains), 1)
+        self.assertEqual(self.clock.trains[0]["route"], "A")
+        self.mock_transit.fetch_upcoming_trains.assert_called_once_with(["A19S"], ["A"])
 
-            entity.trip_update.stop_time_update = [stop_time]
-            mock_feed.entity = [entity]
+    def test_fetch_sun_times_impl_success(self):
+        self.clock.config.get = MagicMock(return_value=10001)
+        self.mock_weather.get_sun_forecast.return_value = {
+            "sunrise": ["2026-04-21T06:07"],
+            "sunset": ["2026-04-21T19:41"]
+        }
 
-            self.clock.fetch_trains_task()
-            self.assertEqual(len(self.clock.trains), 1)
-            self.assertEqual(self.clock.trains[0]["route"], "A")
+        with patch("live_clock.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2026, 4, 21, 0, 0) # Fake 12am before sunrise
+            mock_datetime.fromisoformat = datetime.fromisoformat
+            
+            self.clock._fetch_sun_times_impl()
+            
+            self.assertEqual(self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7))
+            self.assertEqual(self.clock.next_sunset, datetime(2026, 4, 21, 19, 41))
+            self.mock_weather.get_sun_forecast.assert_called_once_with(10001)
 
     @patch("builtins.open")
     @patch("live_clock.fcntl.flock")
@@ -278,42 +264,6 @@ class TestLiveClock(unittest.TestCase):
         self.assertEqual(self.clock.train_arrivals[2], ("E", 0))
         self.assertEqual(self.clock.train_arrivals[3], ("F", 0))
 
-    @patch("live_clock.requests.get")
-    def test_fetch_weather_task_no_data(self, mock_get):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {}
-        mock_get.return_value = mock_response
-
-        self.clock.config.get = MagicMock(return_value=10001)
-
-        with patch.object(live_clock.SubwayClock, "get_lat_lon", return_value=(40.71, -74.00)):
-            self.clock.fetch_weather_task()
-            # wait for future
-            if self.clock._weather_future:
-                self.clock._weather_future.result()
-            self.assertEqual(self.clock.weather_text, "")
-
-    @patch("live_clock.requests.get")
-    def test_fetch_sun_times_impl_success(self, mock_get):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "daily": {"sunrise": ["2026-04-21T06:07"], "sunset": ["2026-04-21T19:41"]}
-        }
-        mock_get.return_value = mock_response
-
-        self.clock.config.get = MagicMock(return_value=10001)
-
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2026, 4, 21, 0, 0) # Fake 12am before sunrise
-            mock_datetime.fromisoformat = datetime.fromisoformat
-            
-            with patch.object(live_clock.SubwayClock, "get_lat_lon", return_value=(40.71, -74.00)):
-                self.clock._fetch_sun_times_impl()
-                self.assertEqual(self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7))
-                self.assertEqual(self.clock.next_sunset, datetime(2026, 4, 21, 19, 41))
-
     def test_clear(self):
         self.clock.clear()
         self.clock.matrix.Clear.assert_called_once()
@@ -377,6 +327,7 @@ class TestLiveClock(unittest.TestCase):
 
         self.clock.config.is_modified = MagicMock(return_value=False)
         self.clock.check_config_task() # No exception
+
 
 if __name__ == "__main__":
     unittest.main()
