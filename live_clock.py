@@ -45,6 +45,7 @@ class SubwayClock:
     # --- Display Constants ---
     MATRIX_WIDTH = 64
     CHAR_WIDTH = 4
+    TRANSITION_DURATION = 30.0
 
     # --- Base Colors (Tuned for LED Matrices) ---
     COLORS = {
@@ -99,9 +100,9 @@ class SubwayClock:
         "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/" "nyct%2Fgtfs-si",
     ]
 
-    def __init__(self):
+    def __init__(self, matrix=None):
         self.config = Config()
-        self.matrix = None
+        self.matrix = matrix
         self.canvas = None
         self.font = None
         self.train_font = None
@@ -128,12 +129,14 @@ class SubwayClock:
 
     def setup_matrix(self):
         # --- Matrix Setup ---
-        options = RGBMatrixOptions()
-        options.rows = 32
-        options.cols = 64
-        options.hardware_mapping = "adafruit-hat"
-        options.drop_privileges = False  # Required for Bookworm permissions
-        self.matrix = RGBMatrix(options=options)
+        if self.matrix is None:
+            options = RGBMatrixOptions()
+            options.rows = 32
+            options.cols = 64
+            options.hardware_mapping = "adafruit-hat"
+            options.drop_privileges = False  # Required for Bookworm permissions
+            self.matrix = RGBMatrix(options=options)
+        
         self.canvas = self.matrix.CreateFrameCanvas()
 
         # Load fonts
@@ -166,7 +169,6 @@ class SubwayClock:
 
         day_b = self.config.get("day_brightness")
         night_b = self.config.get("night_brightness")
-        transition_duration = 30.0
 
         now = datetime.now()
 
@@ -178,16 +180,16 @@ class SubwayClock:
             self.next_sunrise += timedelta(days=1)
             self.undim_finish_time += timedelta(days=1)
 
-        dim_start = self.dim_finish_time - timedelta(minutes=transition_duration)
-        undim_start = self.undim_finish_time - timedelta(minutes=transition_duration)
+        dim_start = self.dim_finish_time - timedelta(minutes=self.TRANSITION_DURATION)
+        undim_start = self.undim_finish_time - timedelta(minutes=self.TRANSITION_DURATION)
 
         if dim_start <= now <= self.dim_finish_time:
             mins_elapsed = (now - dim_start).total_seconds() / 60.0
-            fraction = mins_elapsed / transition_duration
+            fraction = mins_elapsed / self.TRANSITION_DURATION
             target_brightness = int(day_b + (night_b - day_b) * fraction)
         elif undim_start <= now <= self.undim_finish_time:
             mins_elapsed = (now - undim_start).total_seconds() / 60.0
-            fraction = mins_elapsed / transition_duration
+            fraction = mins_elapsed / self.TRANSITION_DURATION
             target_brightness = int(night_b + (day_b - night_b) * fraction)
         else:
             if self.undim_finish_time < self.dim_finish_time:
@@ -270,11 +272,10 @@ class SubwayClock:
             daily = resp_json.get("daily")
             if daily and daily.get("sunrise") and daily.get("sunset"):
                 now = datetime.now()
-                transition_duration = 30.0
                 
                 for sr_iso in daily["sunrise"]:
                     sr = datetime.fromisoformat(sr_iso).replace(tzinfo=None)
-                    finish_time = sr + timedelta(minutes=transition_duration / 2)
+                    finish_time = sr + timedelta(minutes=self.TRANSITION_DURATION / 2)
                     if finish_time > now:
                         self.next_sunrise = sr
                         self.undim_finish_time = finish_time
@@ -282,7 +283,7 @@ class SubwayClock:
                         
                 for ss_iso in daily["sunset"]:
                     ss = datetime.fromisoformat(ss_iso).replace(tzinfo=None)
-                    finish_time = ss + timedelta(minutes=transition_duration / 2)
+                    finish_time = ss + timedelta(minutes=self.TRANSITION_DURATION / 2)
                     if finish_time > now:
                         self.next_sunset = ss
                         self.dim_finish_time = finish_time
@@ -412,8 +413,9 @@ class SubwayClock:
             if minutes == 0:
                 text = "Now"
             elif minutes >= 60:
-                hours = minutes / 60.0
-                text = f"{hours:.1f} hr"
+                h = minutes // 60
+                m = minutes % 60
+                text = f"{h}h {m}m"
             else:
                 text = f"{minutes} min"
             color = graphics.Color(200, 200, 200)

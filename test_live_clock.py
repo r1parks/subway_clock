@@ -5,9 +5,7 @@ from unittest.mock import MagicMock, patch
 import sys
 
 # Mock hardware and transit libraries before importing live_clock
-mock_matrix_lib = MagicMock()
 mock_transit = MagicMock()
-sys.modules["rgbmatrix"] = mock_matrix_lib
 sys.modules["google.transit"] = mock_transit
 sys.modules["google.transit.gtfs_realtime_pb2"] = MagicMock()
 sys.modules["qrcode"] = MagicMock()
@@ -17,7 +15,9 @@ import live_clock  # noqa: E402
 
 class TestLiveClock(unittest.TestCase):
     def setUp(self):
-        self.clock = live_clock.SubwayClock()
+        mock_matrix = MagicMock()
+        mock_matrix.brightness = 100
+        self.clock = live_clock.SubwayClock(matrix=mock_matrix)
 
     def test_route_name(self):
         self.assertEqual(self.clock.route_name("GS"), "S")
@@ -64,8 +64,6 @@ class TestLiveClock(unittest.TestCase):
         self.assertEqual(lon, -73.97)
 
     def test_update_brightness(self):
-        self.clock.matrix = MagicMock()
-        self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
         
         # Sunset 20:00, dim_finish = 20:15
@@ -129,8 +127,6 @@ class TestLiveClock(unittest.TestCase):
             self.assertEqual(self.clock.matrix.brightness, 28)
 
     def test_update_brightness_rollover(self):
-        self.clock.matrix = MagicMock()
-        self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
         
         self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
@@ -319,7 +315,6 @@ class TestLiveClock(unittest.TestCase):
                 self.assertEqual(self.clock.next_sunset, datetime(2026, 4, 21, 19, 41))
 
     def test_clear(self):
-        self.clock.matrix = MagicMock()
         self.clock.clear()
         self.clock.matrix.Clear.assert_called_once()
         
@@ -348,7 +343,6 @@ class TestLiveClock(unittest.TestCase):
         canvas_mock = MagicMock()
         self.clock.canvas = canvas_mock
         self.clock.small_font = MagicMock()
-        self.clock.matrix = MagicMock()
         self.clock.config.get = MagicMock(return_value="TestSSID")
         self.clock.display_wifi_qr()
         canvas_mock.Clear.assert_called_once()
@@ -363,7 +357,6 @@ class TestLiveClock(unittest.TestCase):
     def test_render(self):
         canvas_mock = MagicMock()
         self.clock.canvas = canvas_mock
-        self.clock.matrix = MagicMock()
         self.clock.update_brightness = MagicMock()
         self.clock.draw_upcoming_trains = MagicMock()
         self.clock.draw_weather = MagicMock()
