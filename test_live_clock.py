@@ -319,5 +319,147 @@ class TestLiveClock(unittest.TestCase):
             mock_run_pending.assert_called_once()
             self.clock.render.assert_called_once()
 
+    @patch("live_clock.RGBMatrixOptions")
+    @patch("live_clock.RGBMatrix")
+    @patch("live_clock.graphics")
+    def test_setup_matrix_no_matrix(self, mock_graphics, mock_rgbmatrix, mock_options):
+        # Set matrix to None to trigger initialization
+        self.clock.matrix = None
+        
+        # We need a mock font returned from load_font
+        self.clock.load_font = MagicMock()
+        
+        self.clock.setup_matrix()
+        
+        # Verify matrix was created
+        mock_options.assert_called_once()
+        mock_rgbmatrix.assert_called_once()
+        
+        # Verify canvas swap
+        self.clock.matrix.SwapOnVSync.assert_called_once()
+
+    @patch("live_clock.os.path.exists")
+    @patch("live_clock.graphics")
+    def test_load_font_success(self, mock_graphics, mock_exists):
+        mock_exists.return_value = True
+        mock_font_class = MagicMock()
+        mock_graphics.Font.return_value = mock_font_class
+        
+        font = self.clock.load_font("test.bdf")
+        self.assertEqual(font, mock_font_class)
+        font.LoadFont.assert_called_once()
+
+    @patch("live_clock.os.path.exists")
+    @patch("live_clock.logging.critical")
+    @patch("live_clock.sys.exit")
+    def test_load_font_failure(self, mock_exit, mock_logging, mock_exists):
+        mock_exists.return_value = False
+        self.clock.load_font("test.bdf")
+        mock_logging.assert_called_once()
+        mock_exit.assert_called_once_with(1)
+
+    @patch("live_clock.graphics")
+    def test_draw_route_bullet(self, mock_graphics):
+        self.clock.canvas = MagicMock()
+        self.clock.train_font = MagicMock()
+        
+        # Test normal route
+        self.clock.draw_route_bullet(0, 0, "A")
+        
+        # Test mapped route
+        self.clock.draw_route_bullet(0, 0, "GS")
+
+    @patch("live_clock.graphics")
+    def test_draw_upcoming_trains(self, mock_graphics):
+        self.clock.canvas = MagicMock()
+        self.clock.font = MagicMock()
+        self.clock.draw_route_bullet = MagicMock()
+        
+        self.clock.train_arrivals = [
+            ("A", 0),
+            ("C", 45),
+            ("E", 65),
+        ]
+        
+        self.clock.draw_upcoming_trains()
+        
+        # Check that it drew 3 bullets
+        self.assertEqual(self.clock.draw_route_bullet.call_count, 3)
+
+    @patch("live_clock.graphics")
+    def test_draw_weather_full(self, mock_graphics):
+        self.clock.canvas = MagicMock()
+        self.clock.small_font = MagicMock()
+        self.clock.weather_text = "50°"
+        self.clock.weather_condition_text = "Cloudy"
+        self.clock.draw_right_aligned_text = MagicMock()
+        
+        self.clock.draw_weather()
+        self.assertEqual(self.clock.draw_right_aligned_text.call_count, 2)
+
+    @patch("live_clock.subprocess.run")
+    def test_captive_portal_running_exception(self, mock_run):
+        mock_run.side_effect = Exception("Not found")
+        self.assertFalse(self.clock.captive_portal_running())
+
+    @patch("live_clock.qrcode")
+    def test_display_wifi_qr_full(self, mock_qrcode):
+        mock_qr = MagicMock()
+        # Create a simple 2x2 matrix mock
+        mock_qr.get_matrix.return_value = [[True, False], [False, True]]
+        mock_qrcode.QRCode.return_value = mock_qr
+        
+        self.clock.canvas = MagicMock()
+        original_canvas = self.clock.canvas
+        self.clock.small_font = MagicMock()
+        self.clock.config.get = MagicMock(return_value="MySSID")
+        
+        self.clock.display_wifi_qr()
+        
+        # Should set pixels for the "True" elements
+        original_canvas.SetPixel.assert_called()
+        self.clock.matrix.SwapOnVSync.assert_called_once()
+
+    @patch("live_clock.time.sleep")
+    @patch("live_clock.schedule")
+    def test_run_loop(self, mock_schedule, mock_sleep):
+        # We need to simulate the run loop cleanly exiting so it doesn't infinite loop.
+        # We can do this by raising an exception from self.tick() after 1 iteration
+        self.clock.captive_portal_running = MagicMock(side_effect=[True, True, False])
+        self.clock.display_wifi_qr = MagicMock()
+        
+        self.clock.fetch_trains_task = MagicMock()
+        self.clock.fetch_weather_task = MagicMock()
+        self.clock.fetch_sun_times_task = MagicMock()
+        self.clock.update_arrival_times = MagicMock()
+        
+        self.clock.tick = MagicMock(side_effect=StopIteration("Exit Loop"))
+        
+        with self.assertRaises(StopIteration):
+            self.clock.run()
+            
+        self.clock.display_wifi_qr.assert_called_once()
+        self.clock.fetch_trains_task.assert_called_once()
+        self.clock.fetch_weather_task.assert_called_once()
+        self.clock.fetch_sun_times_task.assert_called_once()
+        self.clock.update_arrival_times.assert_called_once()
+        
+        # Test futures handling
+        self.clock._train_future = MagicMock()
+        self.clock._weather_future = MagicMock()
+        self.clock._sun_future = MagicMock()
+        
+        self.clock._train_future.result.side_effect = Exception("Train fail")
+        self.clock._weather_future.result.side_effect = Exception("Weather fail")
+        self.clock._sun_future.result.side_effect = Exception("Sun fail")
+        
+        self.clock.captive_portal_running.side_effect = [False, False]
+        self.clock.tick.side_effect = StopIteration("Exit Loop")
+        
+        with patch("live_clock.logging") as mock_logging:
+            with self.assertRaises(StopIteration):
+                self.clock.run()
+            self.assertEqual(mock_logging.error.call_count, 3)
+
 if __name__ == "__main__":
     unittest.main()
