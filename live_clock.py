@@ -154,14 +154,14 @@ class SubwayClock:
         if self.matrix:
             self.matrix.Clear()
 
-    def update_brightness(self):
+    def update_brightness(self, current_time=None):
         if not all([self.next_sunset, self.next_sunrise, self.dim_finish_time, self.undim_finish_time]):
             return
 
         day_b = self.config.get("day_brightness")
         night_b = self.config.get("night_brightness")
 
-        now = datetime.now()
+        now = current_time or datetime.now()
 
         # Rollover check
         if now > self.dim_finish_time:
@@ -206,11 +206,11 @@ class SubwayClock:
         if self._weather_future is None or self._weather_future.done():
             self._weather_future = self.executor.submit(self._fetch_weather_impl)
 
-    def _fetch_sun_times_impl(self):
+    def _fetch_sun_times_impl(self, current_time=None):
         zip_code = self.config.get("weather_zip")
         daily = self.weather_client.get_sun_forecast(zip_code)
         if daily:
-            now = datetime.now()
+            now = current_time or datetime.now()
             
             for sr_iso in daily["sunrise"]:
                 sr = datetime.fromisoformat(sr_iso).replace(tzinfo=None)
@@ -304,8 +304,8 @@ class SubwayClock:
         time_color = graphics.Color(255, 215, 0)
         self.draw_right_aligned_text(5, self.time_font, time_color, time_text)
 
-    def update_arrival_times(self):
-        now = int(time.time())
+    def update_arrival_times(self, current_timestamp=None):
+        now = current_timestamp if current_timestamp is not None else int(time.time())
         self.train_arrivals = []
         for train in self.trains[:4]:
             minutes = max(0, int((train["time"] - now) / 60))

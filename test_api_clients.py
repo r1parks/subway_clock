@@ -148,12 +148,12 @@ class TestTransitClient(unittest.TestCase):
         mock_stop_time = MagicMock()
         mock_stop_time.stop_id = "A19S"
         mock_stop_time.HasField.side_effect = lambda field: True # "arrival" and "time"
-        mock_stop_time.arrival.time = int(time.time()) + 120 # 2 mins out
+        mock_stop_time.arrival.time = 10120 # 10000 + 120 (2 mins out)
         
         mock_entity.trip_update.stop_time_update = [mock_stop_time]
         mock_feed.entity = [mock_entity]
 
-        arrivals = self.client.fetch_upcoming_trains(["A19S"], ["A", "C"])
+        arrivals = self.client.fetch_upcoming_trains(["A19S"], ["A", "C"], current_timestamp=10000)
         
         self.assertEqual(len(arrivals), 1)
         self.assertEqual(arrivals[0]["route"], "A")

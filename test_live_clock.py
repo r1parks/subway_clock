@@ -66,11 +66,9 @@ class TestLiveClock(unittest.TestCase):
         )
 
         # Test night mode (21:00)
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 21, 0)
-            self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 10)
-            self.assertEqual(self.clock.matrix.brightness, 10)
+        self.clock.update_brightness(current_time=datetime(2024, 1, 1, 21, 0))
+        self.assertEqual(self.clock.current_brightness, 10)
+        self.assertEqual(self.clock.matrix.brightness, 10)
 
         # Test day mode (12:00)
         self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
@@ -79,11 +77,9 @@ class TestLiveClock(unittest.TestCase):
         self.clock.undim_finish_time = datetime(2024, 1, 2, 8, 15)
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0)
-            self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 100)
-            self.assertEqual(self.clock.matrix.brightness, 100)
+        self.clock.update_brightness(current_time=datetime(2024, 1, 1, 12, 0))
+        self.assertEqual(self.clock.current_brightness, 100)
+        self.assertEqual(self.clock.matrix.brightness, 100)
 
         # Test transitioning to night mode (19:50) - 5 mins into 30 min transition
         self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
@@ -92,11 +88,9 @@ class TestLiveClock(unittest.TestCase):
         self.clock.undim_finish_time = datetime(2024, 1, 2, 8, 15)
         self.clock.matrix.brightness = 100
         self.clock.current_brightness = 100
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 19, 50)
-            self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 85)
-            self.assertEqual(self.clock.matrix.brightness, 85)
+        self.clock.update_brightness(current_time=datetime(2024, 1, 1, 19, 50))
+        self.assertEqual(self.clock.current_brightness, 85)
+        self.assertEqual(self.clock.matrix.brightness, 85)
 
         # Test transitioning to day mode (07:51) - 6 mins into 30 min transition
         self.clock.next_sunset = datetime(2024, 1, 1, 20, 0)
@@ -105,11 +99,9 @@ class TestLiveClock(unittest.TestCase):
         self.clock.undim_finish_time = datetime(2024, 1, 2, 8, 15)
         self.clock.matrix.brightness = 10
         self.clock.current_brightness = 10
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 2, 7, 51)
-            self.clock.update_brightness()
-            self.assertEqual(self.clock.current_brightness, 28)
-            self.assertEqual(self.clock.matrix.brightness, 28)
+        self.clock.update_brightness(current_time=datetime(2024, 1, 2, 7, 51))
+        self.assertEqual(self.clock.current_brightness, 28)
+        self.assertEqual(self.clock.matrix.brightness, 28)
 
     def test_update_brightness_rollover(self):
         self.clock.current_brightness = 100
@@ -127,16 +119,14 @@ class TestLiveClock(unittest.TestCase):
         )
 
         # Cross the dim finish threshold to trigger rollover
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 16)
-            self.clock.update_brightness()
-            
-            # Should have rolled over sunset by 1 day
-            self.assertEqual(self.clock.next_sunset, datetime(2024, 1, 2, 20, 0))
-            self.assertEqual(self.clock.dim_finish_time, datetime(2024, 1, 2, 20, 15))
-            
-            # Sunrise hasn't crossed yet, stays the same
-            self.assertEqual(self.clock.next_sunrise, datetime(2024, 1, 2, 8, 0))
+        self.clock.update_brightness(current_time=datetime(2024, 1, 1, 20, 16))
+        
+        # Should have rolled over sunset by 1 day
+        self.assertEqual(self.clock.next_sunset, datetime(2024, 1, 2, 20, 0))
+        self.assertEqual(self.clock.dim_finish_time, datetime(2024, 1, 2, 20, 15))
+        
+        # Sunrise hasn't crossed yet, stays the same
+        self.assertEqual(self.clock.next_sunrise, datetime(2024, 1, 2, 8, 0))
 
     def test_fetch_weather_task_success(self):
         self.clock.config.get = MagicMock(return_value=10001)
@@ -188,15 +178,11 @@ class TestLiveClock(unittest.TestCase):
             "sunset": ["2026-04-21T19:41"]
         }
 
-        with patch("live_clock.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2026, 4, 21, 0, 0) # Fake 12am before sunrise
-            mock_datetime.fromisoformat = datetime.fromisoformat
-            
-            self.clock._fetch_sun_times_impl()
-            
-            self.assertEqual(self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7))
-            self.assertEqual(self.clock.next_sunset, datetime(2026, 4, 21, 19, 41))
-            self.mock_weather.get_sun_forecast.assert_called_once_with(10001)
+        self.clock._fetch_sun_times_impl(current_time=datetime(2026, 4, 21, 0, 0))
+        
+        self.assertEqual(self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7))
+        self.assertEqual(self.clock.next_sunset, datetime(2026, 4, 21, 19, 41))
+        self.mock_weather.get_sun_forecast.assert_called_once_with(10001)
 
     @patch("builtins.open")
     @patch("live_clock.fcntl.flock")
@@ -244,10 +230,7 @@ class TestLiveClock(unittest.TestCase):
         )
         mock_exit.assert_called_once_with(1)
 
-    @patch("live_clock.time.time")
-    def test_update_arrival_times(self, mock_time):
-        mock_time.return_value = 10000
-
+    def test_update_arrival_times(self):
         self.clock.trains = [
             {"route": "C", "time": 10000 + 300},  # 5 mins
             {"route": "A", "time": 10000 + 120},  # 2 mins
@@ -256,7 +239,7 @@ class TestLiveClock(unittest.TestCase):
             {"route": "R", "time": 10000 + 600},  # 5th train, ignored
         ]
 
-        self.clock.update_arrival_times()
+        self.clock.update_arrival_times(current_timestamp=10000)
 
         self.assertEqual(len(self.clock.train_arrivals), 4)
         self.assertEqual(self.clock.train_arrivals[0], ("C", 5))
