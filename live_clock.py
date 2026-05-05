@@ -7,6 +7,7 @@ import sys
 import time
 import signal
 import subprocess
+import threading
 import qrcode
 import schedule
 from concurrent.futures import ThreadPoolExecutor
@@ -110,6 +111,7 @@ class SubwayClock:
         self.dim_finish_time = None
         self.undim_finish_time = None
         self.trains = []
+        self._trains_lock = threading.Lock()
         self.train_arrivals = []
         self.weather_text = ""
         self.weather_condition_text = ""
@@ -252,7 +254,9 @@ class SubwayClock:
     def _fetch_trains_impl(self):
         stop_ids = self.config.get("stop_ids")
         active_routes = self.config.get("routes")
-        self.trains = self.transit_client.fetch_upcoming_trains(stop_ids, active_routes)
+        new_trains = self.transit_client.fetch_upcoming_trains(stop_ids, active_routes)
+        with self._trains_lock:
+            self.trains = new_trains
 
     def fetch_trains_task(self):
         if self._train_future is None or self._train_future.done():
@@ -306,12 +310,14 @@ class SubwayClock:
 
     def update_arrival_times(self, current_timestamp=None):
         now = current_timestamp if current_timestamp is not None else int(time.time())
-        self.train_arrivals = []
-        for train in self.trains:
-            minutes = int((train["time"] - now) / 60)
-            if minutes < 0:
-                continue
-            self.train_arrivals.append((train["route"], minutes))
+        new_arrivals = []
+        with self._trains_lock:
+            for train in self.trains:
+                minutes = int((train["time"] - now) / 60)
+                if minutes < 0:
+                    continue
+                new_arrivals.append((train["route"], minutes))
+        self.train_arrivals = new_arrivals
 
     def draw_upcoming_trains(self):
         y_pos = 7

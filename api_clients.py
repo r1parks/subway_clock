@@ -25,7 +25,6 @@ class WeatherClient:
         ):
             return self.lat, self.lon
 
-        self.weather_zip = zip_str
         url = f"http://api.zippopotam.us/us/{zip_str}"
         try:
             response = self.session.get(url, timeout=5)
@@ -33,6 +32,7 @@ class WeatherClient:
             data = response.json()
             self.lat = float(data["places"][0]["latitude"])
             self.lon = float(data["places"][0]["longitude"])
+            self.weather_zip = zip_str  # Only cache on success
             return self.lat, self.lon
         except RequestException as e:
             logging.error(f"Failed to translate Zip Code {zip_str}: {e}")
