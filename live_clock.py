@@ -307,13 +307,15 @@ class SubwayClock:
     def update_arrival_times(self, current_timestamp=None):
         now = current_timestamp if current_timestamp is not None else int(time.time())
         self.train_arrivals = []
-        for train in self.trains[:4]:
-            minutes = max(0, int((train["time"] - now) / 60))
+        for train in self.trains:
+            minutes = int((train["time"] - now) / 60)
+            if minutes < 0:
+                continue
             self.train_arrivals.append((train["route"], minutes))
 
     def draw_upcoming_trains(self):
         y_pos = 7
-        for route, minutes in self.train_arrivals:
+        for route, minutes in self.train_arrivals[:4]:
             self.draw_route_bullet(0, y_pos, route)
             if minutes == 0:
                 text = "Now"

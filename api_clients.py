@@ -132,7 +132,7 @@ class TransitClient:
                             if not stop_time.HasField("arrival") or not stop_time.arrival.HasField("time"):
                                 continue
                             arrival_time = stop_time.arrival.time
-                            if arrival_time >= now - 60:
+                            if arrival_time >= now:
                                 new_arrivals.append(
                                     {"route": route_id, "time": arrival_time}
                                 )
