@@ -20,7 +20,7 @@ class TestWeatherClient(unittest.TestCase):
     def setUp(self):
         self.client = WeatherClient()
 
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_get_lat_lon_success(self, mock_get):
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -41,7 +41,7 @@ class TestWeatherClient(unittest.TestCase):
         self.assertEqual(mock_get.call_count, 1)
         self.assertEqual(lat2, 40.7128)
 
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_get_lat_lon_failure(self, mock_get):
         mock_get.side_effect = requests.exceptions.RequestException("API Down")
         
@@ -52,7 +52,7 @@ class TestWeatherClient(unittest.TestCase):
         self.assertEqual(lon, -73.97)
 
     @patch("api_clients.WeatherClient.get_lat_lon")
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_get_current_weather_success(self, mock_get, mock_get_lat_lon):
         mock_get_lat_lon.return_value = (40.7128, -74.0060)
         
@@ -72,7 +72,7 @@ class TestWeatherClient(unittest.TestCase):
         self.assertEqual(result["weathercode"], 51)
         
     @patch("api_clients.WeatherClient.get_lat_lon")
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_get_current_weather_missing_data(self, mock_get, mock_get_lat_lon):
         mock_get_lat_lon.return_value = (40.7128, -74.0060)
         mock_response = MagicMock()
@@ -83,7 +83,7 @@ class TestWeatherClient(unittest.TestCase):
         self.assertIsNone(result)
 
     @patch("api_clients.WeatherClient.get_lat_lon")
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_get_current_weather_exception(self, mock_get, mock_get_lat_lon):
         mock_get_lat_lon.return_value = (40.7128, -74.0060)
         mock_get.side_effect = requests.exceptions.RequestException("Connection Refused")
@@ -92,7 +92,7 @@ class TestWeatherClient(unittest.TestCase):
         self.assertIsNone(result)
 
     @patch("api_clients.WeatherClient.get_lat_lon")
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_get_sun_forecast_success(self, mock_get, mock_get_lat_lon):
         mock_get_lat_lon.return_value = (40.7128, -74.0060)
         mock_response = MagicMock()
@@ -111,7 +111,7 @@ class TestWeatherClient(unittest.TestCase):
         self.assertEqual(result["sunset"][0], "2026-04-21T19:41")
 
     @patch("api_clients.WeatherClient.get_lat_lon")
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_get_sun_forecast_missing_data(self, mock_get, mock_get_lat_lon):
         mock_get_lat_lon.return_value = (40.7128, -74.0060)
         mock_response = MagicMock()
@@ -129,7 +129,7 @@ class TestTransitClient(unittest.TestCase):
         self.client.FEED_URLS = ["http://fake-mta-url"]
 
     @patch("api_clients.gtfs_realtime_pb2.FeedMessage")
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_fetch_upcoming_trains_success(self, mock_get, mock_feed_msg_class):
         # Mock requests.get response
         mock_response = MagicMock()
@@ -159,7 +159,7 @@ class TestTransitClient(unittest.TestCase):
         self.assertEqual(len(arrivals), 1)
         self.assertEqual(arrivals[0]["route"], "A")
         
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_fetch_upcoming_trains_http_error(self, mock_get):
         mock_response = MagicMock()
         mock_response.status_code = 404
@@ -170,7 +170,7 @@ class TestTransitClient(unittest.TestCase):
         # Should gracefully continue and return empty
         self.assertEqual(len(arrivals), 0)
 
-    @patch("api_clients.requests.get")
+    @patch("api_clients.requests.Session.get")
     def test_fetch_upcoming_trains_network_exception(self, mock_get):
         mock_get.side_effect = requests.exceptions.RequestException("DNS Resolution failed")
         

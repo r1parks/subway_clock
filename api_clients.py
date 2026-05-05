@@ -11,6 +11,7 @@ class WeatherClient:
     FALLBACK_LON = -73.97
 
     def __init__(self):
+        self.session = requests.Session()
         self.weather_zip = None
         self.lat = None
         self.lon = None
@@ -27,7 +28,7 @@ class WeatherClient:
         self.weather_zip = zip_str
         url = f"http://api.zippopotam.us/us/{zip_str}"
         try:
-            response = requests.get(url, timeout=5)
+            response = self.session.get(url, timeout=5)
             response.raise_for_status()
             data = response.json()
             self.lat = float(data["places"][0]["latitude"])
@@ -48,7 +49,7 @@ class WeatherClient:
             "temperature_unit": "fahrenheit",
         }
         try:
-            response = requests.get(endpoint, params=params, timeout=5)
+            response = self.session.get(endpoint, params=params, timeout=5)
             response.raise_for_status()
             data = response.json().get("current_weather")
             if not data:
@@ -72,7 +73,7 @@ class WeatherClient:
             "timezone": "auto",
         }
         try:
-            response = requests.get(endpoint, params=params, timeout=5)
+            response = self.session.get(endpoint, params=params, timeout=5)
             response.raise_for_status()
             daily = response.json().get("daily")
             if daily and daily.get("sunrise") and daily.get("sunset"):
@@ -95,6 +96,9 @@ class TransitClient:
         "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si",
     ]
 
+    def __init__(self):
+        self.session = requests.Session()
+
     def fetch_upcoming_trains(self, stop_ids, active_routes, current_timestamp=None):
         """Returns [{'route': 'A', 'time': 12345}, ...]"""
         new_arrivals = []
@@ -102,7 +106,7 @@ class TransitClient:
 
         def fetch_url(url):
             try:
-                response = requests.get(url, timeout=5)
+                response = self.session.get(url, timeout=5)
                 if response.status_code != 200:
                     return None
                 return response.content

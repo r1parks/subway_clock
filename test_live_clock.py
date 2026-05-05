@@ -234,18 +234,19 @@ class TestLiveClock(unittest.TestCase):
         self.clock.trains = [
             {"route": "C", "time": 10000 + 300},  # 5 mins
             {"route": "A", "time": 10000 + 120},  # 2 mins
-            {"route": "E", "time": 10000 - 60},  # past (should be 0)
+            {"route": "E", "time": 10000 - 60},  # past (should be skipped)
             {"route": "F", "time": 10000},  # exact now (0 mins)
-            {"route": "R", "time": 10000 + 600},  # 5th train, ignored
+            {"route": "R", "time": 10000 + 600},  # 10 mins
         ]
 
         self.clock.update_arrival_times(current_timestamp=10000)
 
+        # Past train (E) is skipped entirely; remaining 4 trains are included
         self.assertEqual(len(self.clock.train_arrivals), 4)
         self.assertEqual(self.clock.train_arrivals[0], ("C", 5))
         self.assertEqual(self.clock.train_arrivals[1], ("A", 2))
-        self.assertEqual(self.clock.train_arrivals[2], ("E", 0))
-        self.assertEqual(self.clock.train_arrivals[3], ("F", 0))
+        self.assertEqual(self.clock.train_arrivals[2], ("F", 0))
+        self.assertEqual(self.clock.train_arrivals[3], ("R", 10))
 
     def test_clear(self):
         self.clock.clear()
