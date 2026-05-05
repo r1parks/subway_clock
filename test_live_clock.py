@@ -329,5 +329,12 @@ class TestLiveClock(unittest.TestCase):
         self.clock.check_config_task() # No exception
 
 
+    def test_tick(self):
+        with patch("live_clock.schedule.run_pending") as mock_run_pending:
+            self.clock.render = MagicMock()
+            self.clock.tick()
+            mock_run_pending.assert_called_once()
+            self.clock.render.assert_called_once()
+
 if __name__ == "__main__":
     unittest.main()

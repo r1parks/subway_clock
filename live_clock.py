@@ -5,14 +5,14 @@ import logging
 import os
 import sys
 import time
-import requests
 import signal
 import subprocess
 import qrcode
 import schedule
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from google.transit import gtfs_realtime_pb2
+
+from api_clients import WeatherClient, TransitClient
 
 try:
     from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
@@ -89,20 +89,11 @@ class SubwayClock:
         "S": COLORS["DARK_GRAY"],
     }
 
-    FEED_URLS = [
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/" "nyct%2Fgtfs-ace",
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/" "nyct%2Fgtfs-bdfm",
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/" "nyct%2Fgtfs-nqrw",
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/" "nyct%2Fgtfs-l",
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/" "nyct%2Fgtfs-g",
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/" "nyct%2Fgtfs-jz",
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/" "nyct%2Fgtfs-si",
-    ]
-
-    def __init__(self, matrix=None):
+    def __init__(self, matrix=None, weather_client=None, transit_client=None):
         self.config = Config()
         self.matrix = matrix
+        self.weather_client = weather_client or WeatherClient()
+        self.transit_client = transit_client or TransitClient()
         self.canvas = None
         self.font = None
         self.train_font = None
@@ -201,54 +192,15 @@ class SubwayClock:
             self.matrix.brightness = target_brightness
             self.current_brightness = target_brightness
 
-    def get_lat_lon(self, zip_code):
-        if (
-            self.weather_zip == zip_code
-            and self.lat is not None
-            and self.lon is not None
-        ):
-            return self.lat, self.lon
-
-        self.weather_zip = zip_code
-        url = f"http://api.zippopotam.us/us/{zip_code}"
-        try:
-            response = requests.get(url, timeout=5)
-            response.raise_for_status()
-            data = response.json()
-            self.lat = float(data["places"][0]["latitude"])
-            self.lon = float(data["places"][0]["longitude"])
-            return self.lat, self.lon
-        except Exception as e:
-            logging.error(f"Failed to translate Zip Code {zip_code}: {e}")
-            return 41.50, -73.97
-
     def _fetch_weather_impl(self):
         zip_code = self.config.get("weather_zip")
-        endpoint = "https://api.open-meteo.com/v1/forecast"
-        try:
-            lat, lon = self.get_lat_lon(zip_code)
-            params = {
-                "latitude": lat,
-                "longitude": lon,
-                "current_weather": "true",
-                "temperature_unit": "fahrenheit",
-            }
-            response = requests.get(endpoint, params=params, timeout=5)
-            response.raise_for_status()
-            
-            resp_json = response.json()
-            data = resp_json.get("current_weather")
-            if not data:
-                raise NoWeatherException("No weather data")
-
-            temp = int(data["temperature"])
-            code = data["weathercode"]
-            cond = self.map_weather_code(code)
-            self.weather_text = f"{temp}°"
+        data = self.weather_client.get_current_weather(zip_code)
+        if data:
+            cond = self.map_weather_code(data["weathercode"])
+            self.weather_text = f"{data['temperature']}°"
             self.weather_condition_text = cond
-        except Exception as e:
-            logging.error(f"Weather fetch error: {e}")
-            # We don't clear weather_text on error to keep showing old data
+        else:
+            logging.error("Weather fetch returned no data.")
 
     def fetch_weather_task(self):
         if self._weather_future is None or self._weather_future.done():
@@ -256,42 +208,27 @@ class SubwayClock:
 
     def _fetch_sun_times_impl(self):
         zip_code = self.config.get("weather_zip")
-        endpoint = "https://api.open-meteo.com/v1/forecast"
-        try:
-            lat, lon = self.get_lat_lon(zip_code)
-            params = {
-                "latitude": lat,
-                "longitude": lon,
-                "daily": ["sunrise", "sunset"],
-                "timezone": "auto",
-            }
-            response = requests.get(endpoint, params=params, timeout=5)
-            response.raise_for_status()
+        daily = self.weather_client.get_sun_forecast(zip_code)
+        if daily:
+            now = datetime.now()
             
-            resp_json = response.json()
-            daily = resp_json.get("daily")
-            if daily and daily.get("sunrise") and daily.get("sunset"):
-                now = datetime.now()
-                
-                for sr_iso in daily["sunrise"]:
-                    sr = datetime.fromisoformat(sr_iso).replace(tzinfo=None)
-                    finish_time = sr + timedelta(minutes=self.TRANSITION_DURATION / 2)
-                    if finish_time > now:
-                        self.next_sunrise = sr
-                        self.undim_finish_time = finish_time
-                        break
-                        
-                for ss_iso in daily["sunset"]:
-                    ss = datetime.fromisoformat(ss_iso).replace(tzinfo=None)
-                    finish_time = ss + timedelta(minutes=self.TRANSITION_DURATION / 2)
-                    if finish_time > now:
-                        self.next_sunset = ss
-                        self.dim_finish_time = finish_time
-                        break
-            else:
-                logging.error(f"Failed to populate sun times. Received {resp_json}")
-        except Exception as e:
-            logging.error(f"Sun times fetch error: {e}")
+            for sr_iso in daily["sunrise"]:
+                sr = datetime.fromisoformat(sr_iso).replace(tzinfo=None)
+                finish_time = sr + timedelta(minutes=self.TRANSITION_DURATION / 2)
+                if finish_time > now:
+                    self.next_sunrise = sr
+                    self.undim_finish_time = finish_time
+                    break
+                    
+            for ss_iso in daily["sunset"]:
+                ss = datetime.fromisoformat(ss_iso).replace(tzinfo=None)
+                finish_time = ss + timedelta(minutes=self.TRANSITION_DURATION / 2)
+                if finish_time > now:
+                    self.next_sunset = ss
+                    self.dim_finish_time = finish_time
+                    break
+        else:
+            logging.error("Failed to populate sun times from API.")
 
     def fetch_sun_times_task(self):
         if self._sun_future is None or self._sun_future.done():
@@ -315,39 +252,7 @@ class SubwayClock:
     def _fetch_trains_impl(self):
         stop_ids = self.config.get("stop_ids")
         active_routes = self.config.get("routes")
-        new_arrivals = []
-        now = int(time.time())
-
-        for url in self.FEED_URLS:
-            try:
-                response = requests.get(url, timeout=5)
-                if response.status_code != 200:
-                    continue
-                feed = gtfs_realtime_pb2.FeedMessage()
-                feed.ParseFromString(response.content)
-                for entity in feed.entity:
-                    if not entity.HasField("trip_update"):
-                        continue
-                    trip = entity.trip_update.trip
-                    route_id = trip.route_id
-                    if "*" not in active_routes and route_id not in active_routes:
-                        continue
-                    for stop_time in entity.trip_update.stop_time_update:
-                        if stop_time.stop_id not in stop_ids:
-                            continue
-                        if not stop_time.HasField(
-                            "arrival"
-                        ) or not stop_time.arrival.HasField("time"):
-                            continue
-                        arrival_time = stop_time.arrival.time
-                        if arrival_time - now > 60:
-                            new_arrivals.append(
-                                {"route": route_id, "time": arrival_time}
-                            )
-            except Exception as e:
-                logging.error(f"Error fetching feed {url}: {e}")
-        new_arrivals.sort(key=lambda x: x["time"])
-        self.trains = new_arrivals
+        self.trains = self.transit_client.fetch_upcoming_trains(stop_ids, active_routes)
 
     def fetch_trains_task(self):
         if self._train_future is None or self._train_future.done():
@@ -477,6 +382,10 @@ class SubwayClock:
         self.draw_time()
         self.canvas = self.matrix.SwapOnVSync(self.canvas)
 
+    def tick(self):
+        schedule.run_pending()
+        self.render()
+
     def run(self):
         logging.info("Starting Subway Clock (Scheduled Mode)...")
 
@@ -525,8 +434,7 @@ class SubwayClock:
         schedule.every(6).hours.do(self.fetch_sun_times_task)
 
         while True:
-            schedule.run_pending()
-            self.render()
+            self.tick()
             time.sleep(1)
 
 
