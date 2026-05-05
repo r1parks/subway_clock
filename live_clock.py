@@ -157,6 +157,8 @@ class SubwayClock:
             self.matrix.Clear()
 
     def update_brightness(self, current_time=None):
+        if self.matrix is None:
+            return
         if not all([self.next_sunset, self.next_sunrise, self.dim_finish_time, self.undim_finish_time]):
             return
 
@@ -466,6 +468,7 @@ if __name__ == "__main__":
 
     def handle_exit(signum, frame):
         logging.info("Stopping...")
+        clock.executor.shutdown(wait=False)
         clock.clear()
         sys.exit(0)
 
