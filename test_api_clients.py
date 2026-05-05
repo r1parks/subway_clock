@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import time
 import logging
+import requests
 
 # Disable logging during tests to keep console clean
 logging.disable(logging.CRITICAL)
@@ -42,7 +43,7 @@ class TestWeatherClient(unittest.TestCase):
 
     @patch("api_clients.requests.get")
     def test_get_lat_lon_failure(self, mock_get):
-        mock_get.side_effect = Exception("API Down")
+        mock_get.side_effect = requests.exceptions.RequestException("API Down")
         
         lat, lon = self.client.get_lat_lon("00000")
         
@@ -85,7 +86,7 @@ class TestWeatherClient(unittest.TestCase):
     @patch("api_clients.requests.get")
     def test_get_current_weather_exception(self, mock_get, mock_get_lat_lon):
         mock_get_lat_lon.return_value = (40.7128, -74.0060)
-        mock_get.side_effect = Exception("Connection Refused")
+        mock_get.side_effect = requests.exceptions.RequestException("Connection Refused")
 
         result = self.client.get_current_weather("10001")
         self.assertIsNone(result)
@@ -171,7 +172,7 @@ class TestTransitClient(unittest.TestCase):
 
     @patch("api_clients.requests.get")
     def test_fetch_upcoming_trains_network_exception(self, mock_get):
-        mock_get.side_effect = Exception("DNS Resolution failed")
+        mock_get.side_effect = requests.exceptions.RequestException("DNS Resolution failed")
         
         arrivals = self.client.fetch_upcoming_trains(["A19S"], ["A"])
         
