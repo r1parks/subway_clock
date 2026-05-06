@@ -6,13 +6,17 @@ import subprocess
 import flask
 from config_manager import Config
 
+logging.basicConfig(level=logging.INFO)
+
 app = flask.Flask(__name__)
 # Use absolute path relative to this script for the project's stops.json
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STOPS_FILE = os.path.join(SCRIPT_DIR, "stops.json")
 
 # Initialize global config
+logging.info("loading config_obj")
 config_obj = Config()
+logging.info("loaded config_obj")
 
 _stops_cache = None
 
@@ -111,5 +115,8 @@ def debug():
 
 
 if __name__ == "__main__":
-    # Run on port 80 as requested for dedicated hardware service
-    app.run(host="0.0.0.0", port=80)
+    # Run on port 80 by default (production). Override with PORT env var for local dev:
+    #   PORT=5000 python3 web_server.py
+    port = int(os.environ.get("PORT", 80))
+    logging.info(f"app.run() on port {port}")
+    app.run(host="0.0.0.0", port=port)

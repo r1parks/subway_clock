@@ -1,117 +1,77 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Subway Clock Setup</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; }
-        .tag-container {
-            display: flex; flex-wrap: wrap; gap: 8px;
-            margin-bottom: 15px; min-height: 40px;
-            padding: 10px; border: 1px solid #ccc;
-            border-radius: 5px; background-color: #f9f9f9;
-        }
-        .stop-tag {
-            display: inline-flex; align-items: center;
-            background-color: #0078D7; color: white;
-            padding: 5px 10px; border-radius: 15px; font-size: 14px;
-        }
-        .remove-tag { margin-left: 8px; cursor: pointer; font-weight: bold; }
-        .remove-tag:hover { color: #ffcccc; }
-
-        /* Simple styling for the search bar */
-        #stop-search {
-            width: 100%; max-width: 400px; padding: 8px; margin-bottom: 10px;
-            box-sizing: border-box; border: 1px solid #aaa;
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
 </head>
-<body style="font-family: sans-serif; padding: 20px;">
-    <h2>Subway Clock Settings</h2>
-    <form method="POST">
-        <div id="tag-container" class="tag-container" style="max-width: 400px;"></div>
+<body>
+    <main class="container">
+        <h1>Subway Clock Settings</h1>
+        <form method="POST">
 
-        <label><b>Stops</b> (Scroll to find. On desktop, hold Ctrl/Cmd to select multiple):</label><br>
+            <label for="stops-select">
+                <strong>Stops</strong>
+            </label>
+            <select id="stops-select" name="stop_ids" multiple>
+                {% for stop_id, stop_name in all_stops.items() %}
+                    <option value="{{ stop_id }}" {% if stop_id in config.get('stop_ids', []) %}selected{% endif %}>
+                        {{ stop_name }}
+                    </option>
+                {% endfor %}
+            </select>
 
-        <input type="text" id="stop-search" placeholder="Search for a station..."><br>
+            <label for="routes">
+                <strong>Routes</strong>
+                <input type="text" id="routes" name="routes" value="{{ ', '.join(config.get('routes', [])) }}" placeholder="e.g. A, C, E or *">
+                <small>Comma-separated route letters. Use <code>*</code> for all routes.</small>
+            </label>
 
-        <select id="stop-selector" name="stop_ids" multiple size="8" style="width: 100%; max-width: 400px; font-family: monospace;">
-            {% for stop_id, stop_name in all_stops.items() %}
-                <option value="{{ stop_id }}" {% if stop_id in config.get('stop_ids', []) %}selected{% endif %}>
-                    {{ stop_name }}
-                </option>
-            {% endfor %}
-        </select><br><br>
+            <div class="grid">
+                <label for="day_brightness">
+                    <strong>Day Brightness</strong>
+                    <input type="number" id="day_brightness" name="day_brightness" value="{{ config.get('day_brightness', 100) }}" min="0" max="100">
+                    <small>0–100</small>
+                </label>
+                <label for="night_brightness">
+                    <strong>Night Brightness</strong>
+                    <input type="number" id="night_brightness" name="night_brightness" value="{{ config.get('night_brightness', 2) }}" min="0" max="100">
+                    <small>0–100</small>
+                </label>
+            </div>
 
-        <label><b>Routes</b> (comma separated, use * for all):</label><br>
-        <input type="text" name="routes" value="{{ ', '.join(config.get('routes', [])) }}" size="40"><br><br>
+            <label for="weather_zip">
+                <strong>Weather Zip Code</strong>
+                <input type="text" id="weather_zip" name="weather_zip" value="{{ config.get('weather_zip', '12508') }}" pattern="[0-9]{5}" title="Please enter a 5-digit US Zip Code" placeholder="10025">
+            </label>
 
-        <label><b>Day Brightness</b> (0-100):</label><br>
-        <input type="number" name="day_brightness" value="{{ config.get('day_brightness', 100) }}"><br><br>
+            <div class="grid">
+                <label for="night_start_time">
+                    <strong>Night Mode Start</strong>
+                    <input type="time" id="night_start_time" name="night_start_time" value="{{ config.get('night_start_time', '20:00') }}">
+                </label>
+                <label for="night_end_time">
+                    <strong>Night Mode End</strong>
+                    <input type="time" id="night_end_time" name="night_end_time" value="{{ config.get('night_end_time', '08:00') }}">
+                </label>
+            </div>
 
-        <label><b>Night Brightness</b> (0-100):</label><br>
-        <input type="number" name="night_brightness" value="{{ config.get('night_brightness', 2) }}"><br><br>
+            <input type="hidden" name="portal_ssid" value="{{ config.get('portal_ssid', 'SubwayClock') }}">
 
-	<label><b>Weather Zip Code</b>:</label><br>
-        <input type="text" name="weather_zip" value="{{ config.get('weather_zip', '12508') }}" pattern="[0-9]{5}" title="Please enter a 5-digit US Zip Code"><br><br>
+            <button type="submit" class="contrast">Save Changes</button>
+        </form>
 
-	<label><b>Night Mode Start Time</b>:</label><br>
-        <input type="time" name="night_start_time" value="{{ config.get('night_start_time', '20:00') }}"><br><br>
+        <p><small>The clock will automatically update within 30 seconds of saving.</small></p>
+    </main>
 
-        <label><b>Night Mode End Time</b>:</label><br>
-        <input type="time" name="night_end_time" value="{{ config.get('night_end_time', '08:00') }}"><br><br>
-
-        <input type="hidden" name="portal_ssid" value="{{ config.get('portal_ssid', 'SubwayClock') }}">
-
-        <button type="submit" style="padding: 10px 20px; font-size: 16px;">Save Changes</button>
-    </form>
-    <p><i>Note: The clock will automatically update within 30 seconds of saving.</i></p>
-
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            const selectElement = document.getElementById('stop-selector');
-            const tagContainer = document.getElementById('tag-container');
-            const searchInput = document.getElementById('stop-search');
-
-            // Function to render tags based on currently selected options
-            function updateTags() {
-                tagContainer.innerHTML = ''; // Clear current tags
-                Array.from(selectElement.options).forEach(option => {
-                    if (option.selected) {
-                        const tag = document.createElement('span');
-                        tag.className = 'stop-tag';
-                        tag.textContent = option.text;
-
-                        const removeBtn = document.createElement('span');
-                        removeBtn.className = 'remove-tag';
-                        removeBtn.innerHTML = '&times;';
-
-                        // Remove tag logic
-                        removeBtn.onclick = function() {
-                            option.selected = false;
-                            updateTags();
-                        };
-
-                        tag.appendChild(removeBtn);
-                        tagContainer.appendChild(tag);
-                    }
-                });
-            }
-
-            // The Search Filter Logic
-            searchInput.addEventListener('input', function() {
-                const filterText = searchInput.value.toLowerCase();
-                Array.from(selectElement.options).forEach(option => {
-                    const text = option.text.toLowerCase();
-                    // Show option if it matches search text, hide if it doesn't
-                    option.style.display = text.includes(filterText) ? '' : 'none';
-                });
-            });
-
-            // Update tags whenever the user clicks an item in the list
-            selectElement.addEventListener('change', updateTags);
-
-            // Initial render on page load to catch pre-selected Jinja items
-            updateTags();
+        new TomSelect('#stops-select', {
+            plugins: ['remove_button'],
+            placeholder: 'Search for a station...',
+            maxOptions: null,
         });
     </script>
 </body>
