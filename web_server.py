@@ -73,8 +73,6 @@ def index():
             "night_brightness": parse_int(
                 flask.request.form.get("night_brightness"), 2, 0, 100
             ),
-            "night_start_time": flask.request.form.get("night_start_time", "20:00"),
-            "night_end_time": flask.request.form.get("night_end_time", "08:00"),
             "weather_zip": parse_int(flask.request.form.get("weather_zip"), 10025),
         }
 

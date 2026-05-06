@@ -47,17 +47,6 @@
                 <input type="text" id="weather_zip" name="weather_zip" value="{{ config.get('weather_zip', '12508') }}" pattern="[0-9]{5}" title="Please enter a 5-digit US Zip Code" placeholder="10025">
             </label>
 
-            <div class="grid">
-                <label for="night_start_time">
-                    <strong>Night Mode Start</strong>
-                    <input type="time" id="night_start_time" name="night_start_time" value="{{ config.get('night_start_time', '20:00') }}">
-                </label>
-                <label for="night_end_time">
-                    <strong>Night Mode End</strong>
-                    <input type="time" id="night_end_time" name="night_end_time" value="{{ config.get('night_end_time', '08:00') }}">
-                </label>
-            </div>
-
             <input type="hidden" name="portal_ssid" value="{{ config.get('portal_ssid', 'SubwayClock') }}">
 
             <button type="submit" class="contrast">Save Changes</button>
