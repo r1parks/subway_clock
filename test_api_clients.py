@@ -120,29 +120,6 @@ class TestWeatherClient(unittest.TestCase):
         result = self.client.get_sun_forecast("10001")
         self.assertIsNone(result)
 
-    @patch("api_clients.WeatherClient.get_sun_forecast")
-    def test_get_timezone_success(self, mock_get_sun_forecast):
-        """Returns the timezone field from the sun-forecast response."""
-        mock_get_sun_forecast.return_value = {
-            "sunrise": ["2026-04-21T06:07"],
-            "sunset": ["2026-04-21T19:41"],
-            "timezone": "America/New_York",
-        }
-
-        result = self.client.get_timezone("10001")
-
-        self.assertEqual(result, "America/New_York")
-        mock_get_sun_forecast.assert_called_once_with("10001")
-
-    @patch("api_clients.WeatherClient.get_sun_forecast")
-    def test_get_timezone_api_failure(self, mock_get_sun_forecast):
-        """Returns None when the sun-forecast call fails."""
-        mock_get_sun_forecast.return_value = None
-
-        result = self.client.get_timezone("00000")
-
-        self.assertIsNone(result)
-
 
 class TestTransitClient(unittest.TestCase):
     def setUp(self):

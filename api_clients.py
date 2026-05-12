@@ -39,18 +39,6 @@ class WeatherClient:
             logging.error(f"Failed to translate Zip Code {zip_str}: {e}")
             return self.FALLBACK_LAT, self.FALLBACK_LON  # Fallback
 
-    def get_timezone(self, zip_code):
-        """Returns the IANA timezone string for a zip code, e.g. 'America/New_York'.
-
-        Reads the timezone directly from the Open-Meteo sun-forecast response,
-        which already includes it when timezone='auto' is requested. Returns
-        None on failure.
-        """
-        daily = self.get_sun_forecast(zip_code)
-        if daily is None:
-            logging.error(f"Could not determine timezone for zip {zip_code}")
-            return None
-        return daily.get("timezone")
 
     def get_current_weather(self, zip_code):
         """Returns {'temperature': 72, 'weathercode': 51} or None on error."""
