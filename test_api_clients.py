@@ -118,6 +118,57 @@ class TestWeatherClient(unittest.TestCase):
         result = self.client.get_sun_forecast("10001")
         self.assertIsNone(result)
 
+    def test_get_timezone_success(self):
+        self.client.lat = 40.7128
+        self.client.lon = -74.0060
+        self.client.weather_zip = "10001"
+        mock_tf = MagicMock()
+        mock_tf.timezone_at.return_value = "America/New_York"
+        self.client._tf = mock_tf
+
+        result = self.client.get_timezone("10001")
+
+        self.assertEqual(result, "America/New_York")
+        mock_tf.timezone_at.assert_called_once_with(lat=40.7128, lng=-74.0060)
+
+    def test_get_timezone_cached(self):
+        """Second call with same zip should not re-query TimezoneFinder."""
+        self.client.lat = 40.7128
+        self.client.lon = -74.0060
+        self.client.weather_zip = "10001"
+        self.client.timezone_name = "America/New_York"
+        mock_tf = MagicMock()
+        self.client._tf = mock_tf
+
+        result = self.client.get_timezone("10001")
+
+        self.assertEqual(result, "America/New_York")
+        mock_tf.timezone_at.assert_not_called()
+
+    @patch("api_clients.WeatherClient.get_lat_lon")
+    def test_get_timezone_no_coords(self, mock_get_lat_lon):
+        """Returns None when lat/lon are unavailable after get_lat_lon call."""
+        mock_get_lat_lon.return_value = (None, None)
+        self.client.lat = None
+        self.client.lon = None
+
+        result = self.client.get_timezone("00000")
+
+        self.assertIsNone(result)
+
+    def test_get_timezone_finder_returns_none(self):
+        """Returns None when TimezoneFinder cannot map the coordinates."""
+        self.client.lat = 0.0
+        self.client.lon = 0.0
+        self.client.weather_zip = "00000"
+        mock_tf = MagicMock()
+        mock_tf.timezone_at.return_value = None
+        self.client._tf = mock_tf
+
+        result = self.client.get_timezone("00000")
+
+        self.assertIsNone(result)
+
 
 class TestTransitClient(unittest.TestCase):
     def setUp(self):

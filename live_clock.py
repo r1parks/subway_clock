@@ -12,6 +12,7 @@ import qrcode
 import schedule
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from api_clients import WeatherClient, TransitClient
 
@@ -115,10 +116,12 @@ class SubwayClock:
         self.train_arrivals = []
         self.weather_text = ""
         self.weather_condition_text = ""
+        self.display_tz = ZoneInfo("America/New_York")  # Default until zip resolves
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._weather_future = None
         self._train_future = None
         self._sun_future = None
+        self._tz_future = None
 
     def setup_matrix(self):
         # --- Matrix Setup ---
@@ -247,6 +250,22 @@ class SubwayClock:
         if self._sun_future is None or self._sun_future.done():
             self._sun_future = self.executor.submit(self._fetch_sun_times_impl)
 
+    def _fetch_timezone_impl(self):
+        zip_code = self.config.get("weather_zip")
+        tz_name = self.weather_client.get_timezone(zip_code)
+        if tz_name:
+            try:
+                self.display_tz = ZoneInfo(tz_name)
+                logging.info(f"Timezone set to {tz_name} for zip {zip_code}")
+            except ZoneInfoNotFoundError:
+                logging.error(f"Unknown timezone name returned: {tz_name}")
+        else:
+            logging.error("Timezone fetch returned no data; keeping previous timezone.")
+
+    def fetch_timezone_task(self):
+        if self._tz_future is None or self._tz_future.done():
+            self._tz_future = self.executor.submit(self._fetch_timezone_impl)
+
     def map_weather_code(self, code):
         if code == 0:
             return WeatherCodes.CLEAR
@@ -283,6 +302,7 @@ class SubwayClock:
             self.fetch_weather_task()
             if old_zip != self.config.get("weather_zip"):
                 self.fetch_sun_times_task()
+                self.fetch_timezone_task()
 
     def draw_route_bullet(self, x, y, route_id):
         route = self.route_name(route_id)
@@ -315,7 +335,8 @@ class SubwayClock:
         graphics.DrawText(self.canvas, font, x_pos, y_pos, color, text)
 
     def draw_time(self):
-        time_text = time.strftime("%-I:%M").rjust(5)
+        now = datetime.now(self.display_tz)
+        time_text = now.strftime("%-I:%M").rjust(5)
         time_color = graphics.Color(255, 215, 0)
         self.draw_right_aligned_text(5, self.time_font, time_color, time_text)
 
@@ -422,6 +443,7 @@ class SubwayClock:
         self.fetch_trains_task()
         self.fetch_weather_task()
         self.fetch_sun_times_task()
+        self.fetch_timezone_task()
 
         # Wait for the initial data fetches to finish so we don't clear the
         # "starting..." screen prematurely.
