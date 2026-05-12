@@ -129,7 +129,7 @@ class SubwayClock:
             options.hardware_mapping = "adafruit-hat"
             options.drop_privileges = False  # Required for Bookworm permissions
             self.matrix = RGBMatrix(options=options)
-        
+
         self.canvas = self.matrix.CreateFrameCanvas()
 
         # Load fonts
@@ -159,7 +159,14 @@ class SubwayClock:
     def update_brightness(self, current_time=None):
         if self.matrix is None:
             return
-        if not all([self.next_sunset, self.next_sunrise, self.dim_finish_time, self.undim_finish_time]):
+        if not all(
+            [
+                self.next_sunset,
+                self.next_sunrise,
+                self.dim_finish_time,
+                self.undim_finish_time,
+            ]
+        ):
             return
 
         day_b = self.config.get("day_brightness")
@@ -176,7 +183,9 @@ class SubwayClock:
             self.undim_finish_time += timedelta(days=1)
 
         dim_start = self.dim_finish_time - timedelta(minutes=self.TRANSITION_DURATION)
-        undim_start = self.undim_finish_time - timedelta(minutes=self.TRANSITION_DURATION)
+        undim_start = self.undim_finish_time - timedelta(
+            minutes=self.TRANSITION_DURATION
+        )
 
         if dim_start <= now <= self.dim_finish_time:
             mins_elapsed = (now - dim_start).total_seconds() / 60.0
@@ -215,7 +224,7 @@ class SubwayClock:
         daily = self.weather_client.get_sun_forecast(zip_code)
         if daily:
             now = current_time or datetime.now()
-            
+
             for sr_iso in daily["sunrise"]:
                 sr = datetime.fromisoformat(sr_iso).replace(tzinfo=None)
                 finish_time = sr + timedelta(minutes=self.TRANSITION_DURATION / 2)
@@ -223,7 +232,7 @@ class SubwayClock:
                     self.next_sunrise = sr
                     self.undim_finish_time = finish_time
                     break
-                    
+
             for ss_iso in daily["sunset"]:
                 ss = datetime.fromisoformat(ss_iso).replace(tzinfo=None)
                 finish_time = ss + timedelta(minutes=self.TRANSITION_DURATION / 2)

@@ -115,7 +115,9 @@ class TransitClient:
                 return None
 
         with ThreadPoolExecutor(max_workers=len(self.FEED_URLS)) as executor:
-            future_to_url = {executor.submit(fetch_url, url): url for url in self.FEED_URLS}
+            future_to_url = {
+                executor.submit(fetch_url, url): url for url in self.FEED_URLS
+            }
             for future in as_completed(future_to_url):
                 content = future.result()
                 if not content:
@@ -133,7 +135,9 @@ class TransitClient:
                         for stop_time in entity.trip_update.stop_time_update:
                             if stop_time.stop_id not in stop_ids:
                                 continue
-                            if not stop_time.HasField("arrival") or not stop_time.arrival.HasField("time"):
+                            if not stop_time.HasField(
+                                "arrival"
+                            ) or not stop_time.arrival.HasField("time"):
                                 continue
                             arrival_time = stop_time.arrival.time
                             if arrival_time >= now:
@@ -142,6 +146,6 @@ class TransitClient:
                                 )
                 except Exception as e:
                     logging.error(f"Error parsing feed: {e}")
-                
+
         new_arrivals.sort(key=lambda x: x["time"])
         return new_arrivals
