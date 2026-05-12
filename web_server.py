@@ -55,6 +55,16 @@ def parse_int(value, default, min_val=None, max_val=None):
         return default
 
 
+def parse_zip(value, default="10025"):
+    """Validates a US zip code string (5 digits). Returns default on invalid input."""
+    import re
+    value = str(value).strip() if value else ""
+    if re.fullmatch(r"[0-9]{5}", value):
+        return value
+    logging.warning(f"Invalid zip code '{value}', using default '{default}'.")
+    return default
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     if flask.request.method == "POST":
@@ -73,7 +83,7 @@ def index():
             "night_brightness": parse_int(
                 flask.request.form.get("night_brightness"), 2, 0, 100
             ),
-            "weather_zip": flask.request.form.get("weather_zip", "10025").strip(),
+            "weather_zip": parse_zip(flask.request.form.get("weather_zip")),
         }
 
         config_obj.update_bulk(new_config)

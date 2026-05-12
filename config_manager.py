@@ -15,7 +15,7 @@ class Config:
             "routes": ["A", "C", "B"],
             "day_brightness": 100,
             "night_brightness": 2,
-            "weather_zip": 10025,
+            "weather_zip": "10025",
         }
         self.config = self.defaults.copy()
         self.load()
