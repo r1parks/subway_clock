@@ -180,18 +180,21 @@ class TestLiveClock(unittest.TestCase):
         self.mock_weather.get_sun_forecast.return_value = {
             "sunrise": ["2026-04-21T06:07"],
             "sunset": ["2026-04-21T19:41"],
-            "timezone": "America/New_York",
+            "timezone": "America/Los_Angeles",
         }
 
         self.clock._fetch_sun_times_impl(
             current_time=datetime(2026, 4, 21, 0, 0, tzinfo=tz)
         )
 
+        # Timezone should have been updated from the response
+        self.assertEqual(self.clock.display_tz, ZoneInfo("America/Los_Angeles"))
+        new_tz = self.clock.display_tz
         self.assertEqual(
-            self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7, tzinfo=tz)
+            self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7, tzinfo=new_tz)
         )
         self.assertEqual(
-            self.clock.next_sunset, datetime(2026, 4, 21, 19, 41, tzinfo=tz)
+            self.clock.next_sunset, datetime(2026, 4, 21, 19, 41, tzinfo=new_tz)
         )
         self.mock_weather.get_sun_forecast.assert_called_once_with(10001)
 
@@ -269,38 +272,6 @@ class TestLiveClock(unittest.TestCase):
         self.clock.draw_time()
         self.clock.canvas.SetPixel = MagicMock()
 
-    def test_fetch_timezone_impl_success(self):
-        """_fetch_timezone_impl updates display_tz when the client returns a valid name."""
-        from zoneinfo import ZoneInfo
-
-        self.clock.config.get = MagicMock(return_value="90210")
-        self.mock_weather.get_timezone.return_value = "America/Los_Angeles"
-
-        self.clock._fetch_timezone_impl()
-
-        self.assertEqual(self.clock.display_tz, ZoneInfo("America/Los_Angeles"))
-        self.mock_weather.get_timezone.assert_called_once_with("90210")
-
-    def test_fetch_timezone_impl_failure(self):
-        """_fetch_timezone_impl keeps existing display_tz when the client returns None."""
-        from zoneinfo import ZoneInfo
-
-        original_tz = self.clock.display_tz  # Default America/New_York
-        self.clock.config.get = MagicMock(return_value="00000")
-        self.mock_weather.get_timezone.return_value = None
-
-        self.clock._fetch_timezone_impl()
-
-        self.assertEqual(self.clock.display_tz, original_tz)
-
-    def test_fetch_timezone_task_submits(self):
-        """fetch_timezone_task submits work to the executor and stores the future."""
-        self.mock_weather.get_timezone.return_value = None  # Safe no-op path
-        self.clock.fetch_timezone_task()
-        self.assertIsNotNone(self.clock._tz_future)
-        if self.clock._tz_future:
-            self.clock._tz_future.result()  # Should not raise
-
     def test_update_brightness_invalid(self):
         self.clock.next_sunset = None
         self.clock.next_sunrise = None
@@ -349,10 +320,8 @@ class TestLiveClock(unittest.TestCase):
         self.clock.fetch_trains_task = MagicMock()
         self.clock.fetch_weather_task = MagicMock()
         self.clock.fetch_sun_times_task = MagicMock()
-        self.clock.fetch_timezone_task = MagicMock()
         self.clock.check_config_task()
         self.clock.fetch_sun_times_task.assert_called_once()
-        self.clock.fetch_timezone_task.assert_called_once()
 
         self.clock.config.is_modified = MagicMock(return_value=False)
         self.clock.check_config_task()  # No exception
