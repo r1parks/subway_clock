@@ -58,6 +58,7 @@ def parse_int(value, default, min_val=None, max_val=None):
 def parse_zip(value, default="10025"):
     """Validates a US zip code string (5 digits). Returns default on invalid input."""
     import re
+
     value = str(value).strip() if value else ""
     if re.fullmatch(r"[0-9]{5}", value):
         return value
