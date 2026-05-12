@@ -73,7 +73,7 @@ def index():
             "night_brightness": parse_int(
                 flask.request.form.get("night_brightness"), 2, 0, 100
             ),
-            "weather_zip": parse_int(flask.request.form.get("weather_zip"), 10025),
+            "weather_zip": flask.request.form.get("weather_zip", "10025").strip(),
         }
 
         config_obj.update_bulk(new_config)
@@ -115,6 +115,10 @@ def debug():
 if __name__ == "__main__":
     # Run on port 80 by default (production). Override with PORT env var for local dev:
     #   PORT=5000 python3 web_server.py
-    port = int(os.environ.get("PORT", 80))
+    try:
+        port = int(os.environ.get("PORT", 80))
+    except ValueError:
+        logging.warning("Invalid PORT environment variable. Defaulting to 80.")
+        port = 80
     logging.info(f"app.run() on port {port}")
     app.run(host="0.0.0.0", port=port)

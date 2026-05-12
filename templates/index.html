@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Subway Clock Setup</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/pico.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/tom-select.css') }}">
 </head>
 <body>
     <main class="container">
@@ -44,7 +44,7 @@
 
             <label for="weather_zip">
                 <strong>Weather Zip Code</strong>
-                <input type="text" id="weather_zip" name="weather_zip" value="{{ config.get('weather_zip', '12508') }}" pattern="[0-9]{5}" title="Please enter a 5-digit US Zip Code" placeholder="10025">
+                <input type="text" id="weather_zip" name="weather_zip" value="{{ config.get('weather_zip', '10025') }}" pattern="[0-9]{5}" title="Please enter a 5-digit US Zip Code" placeholder="10025">
             </label>
 
             <input type="hidden" name="portal_ssid" value="{{ config.get('portal_ssid', 'SubwayClock') }}">
@@ -55,7 +55,7 @@
         <p><small>The clock will automatically update within 30 seconds of saving.</small></p>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/tom-select.complete.min.js') }}"></script>
     <script>
         new TomSelect('#stops-select', {
             plugins: ['remove_button'],
