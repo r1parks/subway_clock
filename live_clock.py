@@ -12,6 +12,7 @@ import qrcode
 import schedule
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from api_clients import WeatherClient, TransitClient
 
@@ -115,6 +116,7 @@ class SubwayClock:
         self.train_arrivals = []
         self.weather_text = ""
         self.weather_condition_text = ""
+        self.display_tz = ZoneInfo("America/New_York")  # Default until zip resolves
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._weather_future = None
         self._train_future = None
@@ -172,7 +174,7 @@ class SubwayClock:
         day_b = self.config.get("day_brightness")
         night_b = self.config.get("night_brightness")
 
-        now = current_time or datetime.now()
+        now = current_time or datetime.now(self.display_tz)
 
         # Rollover check
         if now > self.dim_finish_time:
@@ -223,10 +225,19 @@ class SubwayClock:
         zip_code = self.config.get("weather_zip")
         daily = self.weather_client.get_sun_forecast(zip_code)
         if daily:
-            now = current_time or datetime.now()
+            # Update timezone first so sunrise/sunset are interpreted in local time
+            tz_name = daily.get("timezone")
+            if tz_name:
+                try:
+                    self.display_tz = ZoneInfo(tz_name)
+                    logging.info(f"Timezone updated to {tz_name} for zip {zip_code}")
+                except ZoneInfoNotFoundError:
+                    logging.error(f"Unknown timezone name returned: {tz_name}")
+
+            now = current_time or datetime.now(self.display_tz)
 
             for sr_iso in daily["sunrise"]:
-                sr = datetime.fromisoformat(sr_iso).replace(tzinfo=None)
+                sr = datetime.fromisoformat(sr_iso).replace(tzinfo=self.display_tz)
                 finish_time = sr + timedelta(minutes=self.TRANSITION_DURATION / 2)
                 if finish_time > now:
                     self.next_sunrise = sr
@@ -234,7 +245,7 @@ class SubwayClock:
                     break
 
             for ss_iso in daily["sunset"]:
-                ss = datetime.fromisoformat(ss_iso).replace(tzinfo=None)
+                ss = datetime.fromisoformat(ss_iso).replace(tzinfo=self.display_tz)
                 finish_time = ss + timedelta(minutes=self.TRANSITION_DURATION / 2)
                 if finish_time > now:
                     self.next_sunset = ss
@@ -315,7 +326,8 @@ class SubwayClock:
         graphics.DrawText(self.canvas, font, x_pos, y_pos, color, text)
 
     def draw_time(self):
-        time_text = time.strftime("%-I:%M").rjust(5)
+        now = datetime.now(self.display_tz)
+        time_text = now.strftime("%-I:%M").rjust(5)
         time_color = graphics.Color(255, 215, 0)
         self.draw_right_aligned_text(5, self.time_font, time_color, time_text)
 

@@ -172,16 +172,30 @@ class TestLiveClock(unittest.TestCase):
         self.mock_transit.fetch_upcoming_trains.assert_called_once_with(["A19S"], ["A"])
 
     def test_fetch_sun_times_impl_success(self):
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("America/New_York")
+        self.clock.display_tz = tz
         self.clock.config.get = MagicMock(return_value=10001)
         self.mock_weather.get_sun_forecast.return_value = {
             "sunrise": ["2026-04-21T06:07"],
             "sunset": ["2026-04-21T19:41"],
+            "timezone": "America/Los_Angeles",
         }
 
-        self.clock._fetch_sun_times_impl(current_time=datetime(2026, 4, 21, 0, 0))
+        self.clock._fetch_sun_times_impl(
+            current_time=datetime(2026, 4, 21, 0, 0, tzinfo=tz)
+        )
 
-        self.assertEqual(self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7))
-        self.assertEqual(self.clock.next_sunset, datetime(2026, 4, 21, 19, 41))
+        # Timezone should have been updated from the response
+        self.assertEqual(self.clock.display_tz, ZoneInfo("America/Los_Angeles"))
+        new_tz = self.clock.display_tz
+        self.assertEqual(
+            self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7, tzinfo=new_tz)
+        )
+        self.assertEqual(
+            self.clock.next_sunset, datetime(2026, 4, 21, 19, 41, tzinfo=new_tz)
+        )
         self.mock_weather.get_sun_forecast.assert_called_once_with(10001)
 
     @patch("builtins.open")

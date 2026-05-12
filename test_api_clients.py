@@ -97,7 +97,8 @@ class TestWeatherClient(unittest.TestCase):
         mock_get_lat_lon.return_value = (40.7128, -74.0060)
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "daily": {"sunrise": ["2026-04-21T06:07"], "sunset": ["2026-04-21T19:41"]}
+            "timezone": "America/New_York",
+            "daily": {"sunrise": ["2026-04-21T06:07"], "sunset": ["2026-04-21T19:41"]},
         }
         mock_get.return_value = mock_response
 
@@ -106,6 +107,7 @@ class TestWeatherClient(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["sunrise"][0], "2026-04-21T06:07")
         self.assertEqual(result["sunset"][0], "2026-04-21T19:41")
+        self.assertEqual(result["timezone"], "America/New_York")
 
     @patch("api_clients.WeatherClient.get_lat_lon")
     @patch("api_clients.requests.Session.get")

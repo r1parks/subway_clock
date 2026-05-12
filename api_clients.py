@@ -33,6 +33,7 @@ class WeatherClient:
             self.lat = float(data["places"][0]["latitude"])
             self.lon = float(data["places"][0]["longitude"])
             self.weather_zip = zip_str  # Only cache on success
+
             return self.lat, self.lon
         except RequestException as e:
             logging.error(f"Failed to translate Zip Code {zip_str}: {e}")
@@ -63,7 +64,17 @@ class WeatherClient:
             return None
 
     def get_sun_forecast(self, zip_code):
-        """Returns {'sunrise': ['...'], 'sunset': ['...']} or None on error."""
+        """Returns the Open-Meteo daily payload including sunrise, sunset, and
+        timezone, or None on error.
+
+        Example return value::
+
+            {
+                'sunrise': ['2026-05-12T05:47'],
+                'sunset':  ['2026-05-12T20:11'],
+                'timezone': 'America/New_York',
+            }
+        """
         endpoint = "https://api.open-meteo.com/v1/forecast"
         lat, lon = self.get_lat_lon(zip_code)
         params = {
@@ -75,8 +86,10 @@ class WeatherClient:
         try:
             response = self.session.get(endpoint, params=params, timeout=5)
             response.raise_for_status()
-            daily = response.json().get("daily")
+            body = response.json()
+            daily = body.get("daily")
             if daily and daily.get("sunrise") and daily.get("sunset"):
+                daily["timezone"] = body.get("timezone")
                 return daily
             return None
         except RequestException as e:
