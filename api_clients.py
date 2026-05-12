@@ -39,7 +39,6 @@ class WeatherClient:
             logging.error(f"Failed to translate Zip Code {zip_str}: {e}")
             return self.FALLBACK_LAT, self.FALLBACK_LON  # Fallback
 
-
     def get_current_weather(self, zip_code):
         """Returns {'temperature': 72, 'weathercode': 51} or None on error."""
         endpoint = "https://api.open-meteo.com/v1/forecast"
