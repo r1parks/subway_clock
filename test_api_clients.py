@@ -97,7 +97,8 @@ class TestWeatherClient(unittest.TestCase):
         mock_get_lat_lon.return_value = (40.7128, -74.0060)
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "daily": {"sunrise": ["2026-04-21T06:07"], "sunset": ["2026-04-21T19:41"]}
+            "timezone": "America/New_York",
+            "daily": {"sunrise": ["2026-04-21T06:07"], "sunset": ["2026-04-21T19:41"]},
         }
         mock_get.return_value = mock_response
 
@@ -106,6 +107,7 @@ class TestWeatherClient(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["sunrise"][0], "2026-04-21T06:07")
         self.assertEqual(result["sunset"][0], "2026-04-21T19:41")
+        self.assertEqual(result["timezone"], "America/New_York")
 
     @patch("api_clients.WeatherClient.get_lat_lon")
     @patch("api_clients.requests.Session.get")
@@ -118,52 +120,24 @@ class TestWeatherClient(unittest.TestCase):
         result = self.client.get_sun_forecast("10001")
         self.assertIsNone(result)
 
-    def test_get_timezone_success(self):
-        self.client.lat = 40.7128
-        self.client.lon = -74.0060
-        self.client.weather_zip = "10001"
-        mock_tf = MagicMock()
-        mock_tf.timezone_at.return_value = "America/New_York"
-        self.client._tf = mock_tf
+    @patch("api_clients.WeatherClient.get_sun_forecast")
+    def test_get_timezone_success(self, mock_get_sun_forecast):
+        """Returns the timezone field from the sun-forecast response."""
+        mock_get_sun_forecast.return_value = {
+            "sunrise": ["2026-04-21T06:07"],
+            "sunset": ["2026-04-21T19:41"],
+            "timezone": "America/New_York",
+        }
 
         result = self.client.get_timezone("10001")
 
         self.assertEqual(result, "America/New_York")
-        mock_tf.timezone_at.assert_called_once_with(lat=40.7128, lng=-74.0060)
+        mock_get_sun_forecast.assert_called_once_with("10001")
 
-    def test_get_timezone_cached(self):
-        """Second call with same zip should not re-query TimezoneFinder."""
-        self.client.lat = 40.7128
-        self.client.lon = -74.0060
-        self.client.weather_zip = "10001"
-        self.client.timezone_name = "America/New_York"
-        mock_tf = MagicMock()
-        self.client._tf = mock_tf
-
-        result = self.client.get_timezone("10001")
-
-        self.assertEqual(result, "America/New_York")
-        mock_tf.timezone_at.assert_not_called()
-
-    @patch("api_clients.WeatherClient.get_lat_lon")
-    def test_get_timezone_no_coords(self, mock_get_lat_lon):
-        """Returns None when lat/lon are unavailable after get_lat_lon call."""
-        mock_get_lat_lon.return_value = (None, None)
-        self.client.lat = None
-        self.client.lon = None
-
-        result = self.client.get_timezone("00000")
-
-        self.assertIsNone(result)
-
-    def test_get_timezone_finder_returns_none(self):
-        """Returns None when TimezoneFinder cannot map the coordinates."""
-        self.client.lat = 0.0
-        self.client.lon = 0.0
-        self.client.weather_zip = "00000"
-        mock_tf = MagicMock()
-        mock_tf.timezone_at.return_value = None
-        self.client._tf = mock_tf
+    @patch("api_clients.WeatherClient.get_sun_forecast")
+    def test_get_timezone_api_failure(self, mock_get_sun_forecast):
+        """Returns None when the sun-forecast call fails."""
+        mock_get_sun_forecast.return_value = None
 
         result = self.client.get_timezone("00000")
 

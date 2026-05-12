@@ -13,7 +13,6 @@ sys.modules["google"] = MagicMock()
 sys.modules["google.transit"] = MagicMock()
 sys.modules["google.transit.gtfs_realtime_pb2"] = MagicMock()
 sys.modules["qrcode"] = MagicMock()
-sys.modules["timezonefinder"] = MagicMock()
 
 import live_clock
 
@@ -173,16 +172,27 @@ class TestLiveClock(unittest.TestCase):
         self.mock_transit.fetch_upcoming_trains.assert_called_once_with(["A19S"], ["A"])
 
     def test_fetch_sun_times_impl_success(self):
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("America/New_York")
+        self.clock.display_tz = tz
         self.clock.config.get = MagicMock(return_value=10001)
         self.mock_weather.get_sun_forecast.return_value = {
             "sunrise": ["2026-04-21T06:07"],
             "sunset": ["2026-04-21T19:41"],
+            "timezone": "America/New_York",
         }
 
-        self.clock._fetch_sun_times_impl(current_time=datetime(2026, 4, 21, 0, 0))
+        self.clock._fetch_sun_times_impl(
+            current_time=datetime(2026, 4, 21, 0, 0, tzinfo=tz)
+        )
 
-        self.assertEqual(self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7))
-        self.assertEqual(self.clock.next_sunset, datetime(2026, 4, 21, 19, 41))
+        self.assertEqual(
+            self.clock.next_sunrise, datetime(2026, 4, 21, 6, 7, tzinfo=tz)
+        )
+        self.assertEqual(
+            self.clock.next_sunset, datetime(2026, 4, 21, 19, 41, tzinfo=tz)
+        )
         self.mock_weather.get_sun_forecast.assert_called_once_with(10001)
 
     @patch("builtins.open")

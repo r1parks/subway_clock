@@ -4,12 +4,6 @@ import time
 import logging
 from google.transit import gtfs_realtime_pb2
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from timezonefinder import TimezoneFinder
-
-# Loaded once per process — the binary timezone database is ~50 MB and
-# TimezoneFinder is stateless after construction, so a single shared
-# instance is safe across all WeatherClient objects.
-_TIMEZONE_FINDER = TimezoneFinder()
 
 
 class WeatherClient:
@@ -18,11 +12,9 @@ class WeatherClient:
 
     def __init__(self):
         self.session = requests.Session()
-        self._tf = _TIMEZONE_FINDER
         self.weather_zip = None
         self.lat = None
         self.lon = None
-        self.timezone_name = None
 
     def get_lat_lon(self, zip_code):
         zip_str = str(zip_code)
@@ -41,7 +33,7 @@ class WeatherClient:
             self.lat = float(data["places"][0]["latitude"])
             self.lon = float(data["places"][0]["longitude"])
             self.weather_zip = zip_str  # Only cache on success
-            self.timezone_name = None  # Invalidate cached timezone on new coords
+
             return self.lat, self.lon
         except RequestException as e:
             logging.error(f"Failed to translate Zip Code {zip_str}: {e}")
@@ -50,19 +42,15 @@ class WeatherClient:
     def get_timezone(self, zip_code):
         """Returns the IANA timezone string for a zip code, e.g. 'America/New_York'.
 
-        Caches the result for the current zip/coordinates. Returns None on failure.
+        Reads the timezone directly from the Open-Meteo sun-forecast response,
+        which already includes it when timezone='auto' is requested. Returns
+        None on failure.
         """
-        self.get_lat_lon(zip_code)  # Ensure lat/lon are populated
-        if self.lat is None or self.lon is None:
+        daily = self.get_sun_forecast(zip_code)
+        if daily is None:
+            logging.error(f"Could not determine timezone for zip {zip_code}")
             return None
-        if self.timezone_name is None:
-            self.timezone_name = self._tf.timezone_at(lat=self.lat, lng=self.lon)
-            if self.timezone_name is None:
-                logging.error(
-                    f"Could not determine timezone for zip {zip_code} "
-                    f"(lat={self.lat}, lon={self.lon})"
-                )
-        return self.timezone_name
+        return daily.get("timezone")
 
     def get_current_weather(self, zip_code):
         """Returns {'temperature': 72, 'weathercode': 51} or None on error."""
@@ -89,7 +77,17 @@ class WeatherClient:
             return None
 
     def get_sun_forecast(self, zip_code):
-        """Returns {'sunrise': ['...'], 'sunset': ['...']} or None on error."""
+        """Returns the Open-Meteo daily payload including sunrise, sunset, and
+        timezone, or None on error.
+
+        Example return value::
+
+            {
+                'sunrise': ['2026-05-12T05:47'],
+                'sunset':  ['2026-05-12T20:11'],
+                'timezone': 'America/New_York',
+            }
+        """
         endpoint = "https://api.open-meteo.com/v1/forecast"
         lat, lon = self.get_lat_lon(zip_code)
         params = {
@@ -101,8 +99,10 @@ class WeatherClient:
         try:
             response = self.session.get(endpoint, params=params, timeout=5)
             response.raise_for_status()
-            daily = response.json().get("daily")
+            body = response.json()
+            daily = body.get("daily")
             if daily and daily.get("sunrise") and daily.get("sunset"):
+                daily["timezone"] = body.get("timezone")
                 return daily
             return None
         except RequestException as e:

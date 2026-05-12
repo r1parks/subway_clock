@@ -175,7 +175,7 @@ class SubwayClock:
         day_b = self.config.get("day_brightness")
         night_b = self.config.get("night_brightness")
 
-        now = current_time or datetime.now()
+        now = current_time or datetime.now(self.display_tz)
 
         # Rollover check
         if now > self.dim_finish_time:
@@ -226,10 +226,10 @@ class SubwayClock:
         zip_code = self.config.get("weather_zip")
         daily = self.weather_client.get_sun_forecast(zip_code)
         if daily:
-            now = current_time or datetime.now()
+            now = current_time or datetime.now(self.display_tz)
 
             for sr_iso in daily["sunrise"]:
-                sr = datetime.fromisoformat(sr_iso).replace(tzinfo=None)
+                sr = datetime.fromisoformat(sr_iso).replace(tzinfo=self.display_tz)
                 finish_time = sr + timedelta(minutes=self.TRANSITION_DURATION / 2)
                 if finish_time > now:
                     self.next_sunrise = sr
@@ -237,7 +237,7 @@ class SubwayClock:
                     break
 
             for ss_iso in daily["sunset"]:
-                ss = datetime.fromisoformat(ss_iso).replace(tzinfo=None)
+                ss = datetime.fromisoformat(ss_iso).replace(tzinfo=self.display_tz)
                 finish_time = ss + timedelta(minutes=self.TRANSITION_DURATION / 2)
                 if finish_time > now:
                     self.next_sunset = ss
