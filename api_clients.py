@@ -161,4 +161,6 @@ class TransitClient:
                     logging.error(f"Error parsing feed: {e}")
 
         new_arrivals.sort(key=lambda x: x["time"])
+        if not new_arrivals:
+            logging.warning("The set of trains is empty.")
         return new_arrivals
