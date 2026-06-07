@@ -162,5 +162,5 @@ class TransitClient:
 
         new_arrivals.sort(key=lambda x: x["time"])
         if not new_arrivals:
-            logging.warning("The set of trains is empty.")
+            logging.info("The set of trains is empty.")
         return new_arrivals

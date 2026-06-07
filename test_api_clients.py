@@ -160,9 +160,9 @@ class TestTransitClient(unittest.TestCase):
         self.assertEqual(len(arrivals), 1)
         self.assertEqual(arrivals[0]["route"], "A")
 
-    @patch("api_clients.logging.warning")
+    @patch("api_clients.logging.info")
     @patch("api_clients.requests.Session.get")
-    def test_fetch_upcoming_trains_empty_logs_warning(self, mock_get, mock_warning):
+    def test_fetch_upcoming_trains_empty_logs_info(self, mock_get, mock_info):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.content = b"fake protobuf binary"
@@ -176,7 +176,7 @@ class TestTransitClient(unittest.TestCase):
             )
 
         self.assertEqual(len(arrivals), 0)
-        mock_warning.assert_called_once_with("The set of trains is empty.")
+        mock_info.assert_called_once_with("The set of trains is empty.")
 
     @patch("api_clients.requests.Session.get")
     def test_fetch_upcoming_trains_http_error(self, mock_get):

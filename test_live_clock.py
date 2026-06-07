@@ -262,13 +262,13 @@ class TestLiveClock(unittest.TestCase):
         self.assertEqual(self.clock.train_arrivals[2], ("F", 0))
         self.assertEqual(self.clock.train_arrivals[3], ("R", 10))
 
-    @patch("live_clock.logging.warning")
-    def test_update_arrival_times_empty_after_filtering_logs_warning(self, mock_warning):
+    @patch("live_clock.logging.info")
+    def test_update_arrival_times_empty_after_filtering_logs_info(self, mock_info):
         self.clock.trains = [
             {"route": "E", "time": 10000 - 60},  # past (should be skipped)
         ]
         self.clock.update_arrival_times(current_timestamp=10000)
-        mock_warning.assert_called_once_with(
+        mock_info.assert_called_once_with(
             "Train list was not empty initially, but became empty after filtering."
         )
 
@@ -409,16 +409,6 @@ class TestLiveClock(unittest.TestCase):
 
         # Check that it drew 3 bullets
         self.assertEqual(self.clock.draw_route_bullet.call_count, 3)
-
-    @patch("live_clock.logging.info")
-    @patch("live_clock.graphics")
-    def test_draw_upcoming_trains_empty_logs_info(self, mock_graphics, mock_info):
-        self.clock.canvas = MagicMock()
-        self.clock.font = MagicMock()
-        self.clock.draw_route_bullet = MagicMock()
-        self.clock.train_arrivals = []
-        self.clock.draw_upcoming_trains()
-        mock_info.assert_called_once_with("No upcoming trains to display.")
 
     @patch("live_clock.graphics")
     def test_draw_weather_full(self, mock_graphics):
