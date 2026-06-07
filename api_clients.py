@@ -33,6 +33,7 @@ class WeatherClient:
             self.lat = float(data["places"][0]["latitude"])
             self.lon = float(data["places"][0]["longitude"])
             self.weather_zip = zip_str  # Only cache on success
+
             return self.lat, self.lon
         except RequestException as e:
             logging.error(f"Failed to translate Zip Code {zip_str}: {e}")
@@ -63,7 +64,17 @@ class WeatherClient:
             return None
 
     def get_sun_forecast(self, zip_code):
-        """Returns {'sunrise': ['...'], 'sunset': ['...']} or None on error."""
+        """Returns the Open-Meteo daily payload including sunrise, sunset, and
+        timezone, or None on error.
+
+        Example return value::
+
+            {
+                'sunrise': ['2026-05-12T05:47'],
+                'sunset':  ['2026-05-12T20:11'],
+                'timezone': 'America/New_York',
+            }
+        """
         endpoint = "https://api.open-meteo.com/v1/forecast"
         lat, lon = self.get_lat_lon(zip_code)
         params = {
@@ -75,8 +86,10 @@ class WeatherClient:
         try:
             response = self.session.get(endpoint, params=params, timeout=5)
             response.raise_for_status()
-            daily = response.json().get("daily")
+            body = response.json()
+            daily = body.get("daily")
             if daily and daily.get("sunrise") and daily.get("sunset"):
+                daily["timezone"] = body.get("timezone")
                 return daily
             return None
         except RequestException as e:
@@ -115,7 +128,9 @@ class TransitClient:
                 return None
 
         with ThreadPoolExecutor(max_workers=len(self.FEED_URLS)) as executor:
-            future_to_url = {executor.submit(fetch_url, url): url for url in self.FEED_URLS}
+            future_to_url = {
+                executor.submit(fetch_url, url): url for url in self.FEED_URLS
+            }
             for future in as_completed(future_to_url):
                 content = future.result()
                 if not content:
@@ -133,7 +148,9 @@ class TransitClient:
                         for stop_time in entity.trip_update.stop_time_update:
                             if stop_time.stop_id not in stop_ids:
                                 continue
-                            if not stop_time.HasField("arrival") or not stop_time.arrival.HasField("time"):
+                            if not stop_time.HasField(
+                                "arrival"
+                            ) or not stop_time.arrival.HasField("time"):
                                 continue
                             arrival_time = stop_time.arrival.time
                             if arrival_time >= now:
@@ -142,6 +159,6 @@ class TransitClient:
                                 )
                 except Exception as e:
                     logging.error(f"Error parsing feed: {e}")
-                
+
         new_arrivals.sort(key=lambda x: x["time"])
         return new_arrivals

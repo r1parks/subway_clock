@@ -17,7 +17,7 @@ class TestConfigManager(unittest.TestCase):
         self.valid_json = {
             "portal_ssid": "TestSSID",
             "day_brightness": 80,
-            "weather_zip": 90210
+            "weather_zip": 90210,
         }
         with open(self.config_file, "w") as f:
             json.dump(self.valid_json, f)
@@ -55,7 +55,7 @@ class TestConfigManager(unittest.TestCase):
         # Modify the file
         with open(self.config_file, "w") as f:
             json.dump({"portal_ssid": "NewSSID"}, f)
-        
+
         # We need to simulate time passing for mtime to definitely update on some filesystems
         # Or just mock os.path.getmtime
         with patch("os.path.getmtime", return_value=config._last_mtime + 10):
@@ -74,7 +74,7 @@ class TestConfigManager(unittest.TestCase):
         config = Config(config_file=self.config_file)
         config.config["portal_ssid"] = "SavedSSID"
         config.save()
-        
+
         with open(self.config_file, "r") as f:
             data = json.load(f)
         self.assertEqual(data["portal_ssid"], "SavedSSID")
@@ -93,7 +93,9 @@ class TestConfigManager(unittest.TestCase):
         with patch("builtins.open", side_effect=Exception("Test Exception")):
             config.save()
         mock_logging_error.assert_called_once()
-        self.assertIn("An unexpected error occurred", mock_logging_error.call_args[0][0])
+        self.assertIn(
+            "An unexpected error occurred", mock_logging_error.call_args[0][0]
+        )
 
     def test_get_with_default(self):
         config = Config(config_file=self.config_file)
@@ -103,7 +105,7 @@ class TestConfigManager(unittest.TestCase):
         config = Config(config_file=self.config_file)
         config.set("weather_zip", 10001)
         self.assertEqual(config.get("weather_zip"), 10001)
-        
+
         with open(self.config_file, "r") as f:
             data = json.load(f)
         self.assertEqual(data["weather_zip"], 10001)
@@ -113,7 +115,7 @@ class TestConfigManager(unittest.TestCase):
         config.update_bulk({"portal_ssid": "BulkSSID", "day_brightness": 50})
         self.assertEqual(config.get("portal_ssid"), "BulkSSID")
         self.assertEqual(config.get("day_brightness"), 50)
-        
+
         with open(self.config_file, "r") as f:
             data = json.load(f)
         self.assertEqual(data["portal_ssid"], "BulkSSID")
@@ -124,6 +126,7 @@ class TestConfigManager(unittest.TestCase):
         d = config.to_dict()
         self.assertEqual(d["portal_ssid"], "TestSSID")
         self.assertIsNot(d, config.config)
+
 
 if __name__ == "__main__":
     unittest.main()

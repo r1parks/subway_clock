@@ -6,13 +6,17 @@ import subprocess
 import flask
 from config_manager import Config
 
+logging.basicConfig(level=logging.INFO)
+
 app = flask.Flask(__name__)
 # Use absolute path relative to this script for the project's stops.json
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STOPS_FILE = os.path.join(SCRIPT_DIR, "stops.json")
 
 # Initialize global config
+logging.info("loading config_obj")
 config_obj = Config()
+logging.info("loaded config_obj")
 
 _stops_cache = None
 
@@ -51,6 +55,17 @@ def parse_int(value, default, min_val=None, max_val=None):
         return default
 
 
+def parse_zip(value, default="10025"):
+    """Validates a US zip code string (5 digits). Returns default on invalid input."""
+    import re
+
+    value = str(value).strip() if value else ""
+    if re.fullmatch(r"[0-9]{5}", value):
+        return value
+    logging.warning(f"Invalid zip code '{value}', using default '{default}'.")
+    return default
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     if flask.request.method == "POST":
@@ -69,9 +84,7 @@ def index():
             "night_brightness": parse_int(
                 flask.request.form.get("night_brightness"), 2, 0, 100
             ),
-            "night_start_time": flask.request.form.get("night_start_time", "20:00"),
-            "night_end_time": flask.request.form.get("night_end_time", "08:00"),
-            "weather_zip": parse_int(flask.request.form.get("weather_zip"), 10025),
+            "weather_zip": parse_zip(flask.request.form.get("weather_zip")),
         }
 
         config_obj.update_bulk(new_config)
@@ -111,5 +124,12 @@ def debug():
 
 
 if __name__ == "__main__":
-    # Run on port 80 as requested for dedicated hardware service
-    app.run(host="0.0.0.0", port=80)
+    # Run on port 80 by default (production). Override with PORT env var for local dev:
+    #   PORT=5000 python3 web_server.py
+    try:
+        port = int(os.environ.get("PORT", 80))
+    except ValueError:
+        logging.warning("Invalid PORT environment variable. Defaulting to 80.")
+        port = 80
+    logging.info(f"app.run() on port {port}")
+    app.run(host="0.0.0.0", port=port)
