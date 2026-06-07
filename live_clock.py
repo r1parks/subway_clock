@@ -340,6 +340,10 @@ class SubwayClock:
                 if minutes < 0:
                     continue
                 new_arrivals.append((train["route"], minutes))
+            if self.trains and not new_arrivals:
+                logging.info(
+                    "Train list was not empty initially, but became empty after filtering."
+                )
         self.train_arrivals = new_arrivals
 
     def draw_upcoming_trains(self):

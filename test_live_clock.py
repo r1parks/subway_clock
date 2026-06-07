@@ -262,6 +262,16 @@ class TestLiveClock(unittest.TestCase):
         self.assertEqual(self.clock.train_arrivals[2], ("F", 0))
         self.assertEqual(self.clock.train_arrivals[3], ("R", 10))
 
+    @patch("live_clock.logging.info")
+    def test_update_arrival_times_empty_after_filtering_logs_info(self, mock_info):
+        self.clock.trains = [
+            {"route": "E", "time": 10000 - 60},  # past (should be skipped)
+        ]
+        self.clock.update_arrival_times(current_timestamp=10000)
+        mock_info.assert_called_once_with(
+            "Train list was not empty initially, but became empty after filtering."
+        )
+
     def test_clear(self):
         self.clock.clear()
         self.clock.matrix.Clear.assert_called_once()
